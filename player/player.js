@@ -3,7 +3,7 @@
 
   const params = new URLSearchParams(window.location.search);
   const sourceUrl = firstParam("src", "url", "videoUrl", "file");
-  const title = firstParam("title", "name") || "ZenkaiTV Video";
+  const title = firstParam("title", "name") || "zxkai Video";
   const episode = firstParam("episode", "ep") || "";
   const poster = firstParam("poster", "thumb") || "";
   const subtitle = firstParam("subtitle", "sub") || "";
@@ -65,9 +65,9 @@
     floatingLabel: document.getElementById("floatingLabel")
   };
 
-  document.title = `${title}${episode ? ` - ${episode}` : ""} - ZenkaiTV`;
+  document.title = `${title}${episode ? ` - ${episode}` : ""} - zxkai`;
   elements.title.textContent = title;
-  elements.episode.textContent = episode || "ZenkaiTV";
+  elements.episode.textContent = episode || "zxkai";
   if (poster) {
     elements.backdrop.style.backgroundImage = `url("${cssUrl(poster)}")`;
   }

@@ -1,21 +1,21 @@
 {
-  "name": "ZenkaiTV",
-  "short_name": "ZenkaiTV",
+  "name": "zxkai",
+  "short_name": "zxkai",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0D1B2A",
-  "theme_color": "#0D1B2A",
+  "background_color": "#071019",
+  "theme_color": "#0b1722",
   "orientation": "any",
   "icons": [
     {
-      "src": "logo-mark-192.png",
+      "src": "zxkai-logo-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "logo-mark-512.png",
+      "src": "zxkai-logo.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

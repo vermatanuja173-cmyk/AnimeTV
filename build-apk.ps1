@@ -10,7 +10,11 @@ Copy-Item -Force `
   (Join-Path $root "styles.css"), `
   (Join-Path $root "client.js"), `
   (Join-Path $root "manifest.webmanifest"), `
-  (Join-Path $root "sources.json") `
+  (Join-Path $root "sources.json"), `
+  (Join-Path $root "service-worker.js"), `
+  (Join-Path $root "zxkai-logo.svg"), `
+  (Join-Path $root "zxkai-logo.png"), `
+  (Join-Path $root "zxkai-logo-192.png") `
   -Destination $assetsDir
 
 Copy-Item -Force -Recurse (Join-Path $root "js") $assetsDir
@@ -30,3 +34,10 @@ try {
 }
 
 Write-Host "APK: $androidDir\app\build\outputs\apk\debug\app-debug.apk"
+
+$downloadDir = Join-Path $root "downloads"
+New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+Copy-Item -Force `
+  (Join-Path $androidDir "app\build\outputs\apk\mobile\debug\app-mobile-debug.apk") `
+  (Join-Path $downloadDir "zxkai-mobile.apk")
+Write-Host "Download: $downloadDir\zxkai-mobile.apk"

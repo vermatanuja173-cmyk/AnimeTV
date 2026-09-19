@@ -2,8 +2,8 @@
   "use strict";
 
   const MAIN_ROUTES = new Map([
-    ["/", { name: "home", appRoute: "home", title: "ZenkaiTV - Watch Anime Online", description: "Watch anime online in HD on ZenkaiTV." }],
-    ["/search", { name: "search", appRoute: "library", title: "Search Anime - ZenkaiTV", description: "Search anime, seasons, and episodes on ZenkaiTV." }],
+    ["/", { name: "home", appRoute: "home", title: "zxkai - Watch Anime Online", description: "Watch anime online in HD on zxkai." }],
+    ["/search", { name: "search", appRoute: "library", title: "Search Anime - zxkai", description: "Search anime, seasons, and episodes on zxkai." }],
     ["/browse", { name: "browse", appRoute: "library", title: "Anime Library - ZenkaiTV", description: "Browse the full ZenkaiTV anime library." }],
     ["/latest", { name: "latest", appRoute: "home", focus: "latest", title: "Latest Episodes - ZenkaiTV", description: "Watch the latest anime episodes on ZenkaiTV." }],
     ["/schedule", { name: "schedule", appRoute: "schedule", title: "Weekly Schedule - ZenkaiTV", description: "See the weekly anime release schedule on ZenkaiTV." }],

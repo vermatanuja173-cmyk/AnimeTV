@@ -3,8 +3,8 @@
     android:height="108dp"
     android:viewportWidth="512"
     android:viewportHeight="512">
-    <!-- ZenkaiTV launcher icon: geometric Z fused with a play triangle on navy -->
-    <path android:fillColor="#0D1B2A" android:pathData="M96,0h320a96,96 0,0 1,96 96v320a96,96 0,0 1,-96 96h-320a96,96 0,0 1,-96 -96v-320a96,96 0,0 1,96 -96z" />
-    <path android:fillColor="#3B82F6" android:pathData="M168,172 L344,172 L344,228 L224,304 L344,304 L344,360 L168,360 L168,304 L288,228 L168,228 Z" />
-    <path android:fillColor="#3B82F6" android:pathData="M296,234 L296,366 L412,300 Z" />
+    <path android:fillColor="#071019" android:pathData="M96,0h320a96,96 0,0 1,96 96v320a96,96 0,0 1,-96 96h-320a96,96 0,0 1,-96 -96v-320a96,96 0,0 1,96 -96z" />
+    <path android:fillColor="#FF6B61" android:pathData="M116,154h244v58l-153,88h153v58H116v-58l153-88H116z" />
+    <path android:fillColor="#8DE5D2" android:pathData="M285,224v156l125-78z" />
+    <path android:fillColor="#FFD166" android:pathData="M372,103a18,18 0,1 0,36 0a18,18 0,1 0,-36 0" />
 </vector>

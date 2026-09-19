@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AnimeTV"
+rootProject.name = "zxkai"
 include ":app"

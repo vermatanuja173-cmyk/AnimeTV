@@ -1,13 +1,13 @@
-# ZenkaiTV
+# zxkai
 
-![ZenkaiTV banner](docs/branding/zenkai-banner.png)
+![zxkai banner](docs/branding/zenkai-banner.png)
 
 <p align="center">
   <strong>A responsive anime catalog and player for the web, phones, tablets, Android, and Android TV.</strong>
 </p>
 
 <p align="center">
-  <a href="https://zenkaitv.com"><strong>Open ZenkaiTV</strong></a>
+  <a href="https://zenkaitv.com"><strong>Open zxkai</strong></a>
   &nbsp;|&nbsp;
   <a href="docs/INSTALLATION.md">Install</a>
   &nbsp;|&nbsp;
@@ -43,7 +43,7 @@
   </tr>
 </table>
 
-## What ZenkaiTV includes
+## What zxkai includes
 
 - **Recent-release home screen** with a daily carousel, high-resolution artwork, blur-until-ready loading, and fast manual navigation.
 - **Smart anime search** with typo tolerance, alternate-title matching, franchise grouping, and natural ordering so original seasons appear before sequels.
@@ -163,7 +163,7 @@ See the [deployment guide](docs/DEPLOY.md) for Vercel configuration, optional en
 
 ## Privacy and legal
 
-ZenkaiTV is a catalog browser and media player. It does not host or store copyrighted video. Playback is supplied by third-party sources configured by the operator, who is responsible for using those sources lawfully. Favorites, history, and resume state are stored on the user's device.
+zxkai is a catalog browser and media player. It does not host or store copyrighted video. Playback is supplied by third-party sources configured by the operator, who is responsible for using those sources lawfully. Favorites, history, and resume state are stored on the user's device.
 
 ## License
 

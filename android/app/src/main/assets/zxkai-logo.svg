@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">zxkai logo</title>
+  <desc id="desc">A coral Z with a mint play mark on a midnight blue rounded square.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14283a"/>
+      <stop offset="1" stop-color="#071019"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8b78"/>
+      <stop offset="1" stop-color="#ff5d68"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M116 154h244v58l-153 88h153v58H116v-58l153-88H116z" fill="url(#mark)"/>
+  <path d="M285 224v156l125-78z" fill="#8de5d2"/>
+  <circle cx="390" cy="121" r="18" fill="#ffd166"/>
+</svg>

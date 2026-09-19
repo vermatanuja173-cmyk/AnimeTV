@@ -1,16 +1,16 @@
 :root {
   color-scheme: dark;
-  --bg: #080a13;
-  --bg-raised: #131625;
-  --bar: rgba(14, 17, 31, 0.78);
-  --text: #f6f3ff;
-  --muted: #9ba3bc;
+  --bg: #071019;
+  --bg-raised: #111e2b;
+  --bar: rgba(9, 20, 31, 0.82);
+  --text: #f7fbff;
+  --muted: #a9bac7;
   --line: rgba(255, 255, 255, 0.11);
-  --cyan: #8a5cff;
-  --rose: #00d2ff;
-  --heart: #b976ff;
-  --gold: #f2bb46;
-  --blue: #00d2ff;
+  --cyan: #ff6b61;
+  --rose: #8de5d2;
+  --heart: #ff9c78;
+  --gold: #ffd166;
+  --blue: #8de5d2;
   --focus: #ffffff;
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
   --radius-sm: 0.55rem;
@@ -21,13 +21,13 @@
   --control-h-lg: 4rem;
   --gap-sm: 0.6rem;
   --gap-md: 0.9rem;
-  --route-home: #00d2ff;
-  --route-library: #58a8ff;
-  --route-schedule: #f2bb46;
-  --route-anipub: #8a5cff;
-  --route-favorites: #b976ff;
+  --route-home: #8de5d2;
+  --route-library: #78b9ff;
+  --route-schedule: #ffd166;
+  --route-anipub: #ff806b;
+  --route-favorites: #ff9c78;
   --route-sources: #40dfc2;
-  --route-settings: #ff7ab6;
+  --route-settings: #ff8f9f;
 }
 
 body[data-theme="light"] {
@@ -64,9 +64,9 @@ body {
   margin: 0;
   overflow-x: hidden;
   background:
-    radial-gradient(circle at 18% 0%, rgba(138, 92, 255, 0.2), transparent 28rem),
-    radial-gradient(circle at 100% 20%, rgba(0, 210, 255, 0.12), transparent 30rem),
-    linear-gradient(180deg, #111426 0%, var(--bg) 32rem);
+    radial-gradient(circle at 18% 0%, rgba(255, 107, 97, 0.18), transparent 28rem),
+    radial-gradient(circle at 100% 20%, rgba(141, 229, 210, 0.12), transparent 30rem),
+    linear-gradient(180deg, #142536 0%, var(--bg) 32rem);
   color: var(--text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -1077,6 +1077,43 @@ main {
   gap: 0.7rem;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+.footer-app-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.footer-app-copy {
+  color: rgba(196, 214, 245, 0.66);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.footer-app-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.65rem;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid rgba(141, 229, 210, 0.36);
+  border-radius: 0.7rem;
+  background: rgba(141, 229, 210, 0.1);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-decoration: none;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.footer-app-download:hover,
+.footer-app-download:focus-visible {
+  border-color: var(--rose);
+  background: rgba(141, 229, 210, 0.2);
+  transform: translateY(-1px);
 }
 
 .footer-dot {

@@ -8,7 +8,7 @@
     }
   },
   "rewrites": [
-    { "source": "/favicon.ico", "destination": "/logo-round.png" },
+    { "source": "/favicon.ico", "destination": "/zxkai-logo.png" },
     { "source": "/api/(.*)", "destination": "/api/[...path]" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
