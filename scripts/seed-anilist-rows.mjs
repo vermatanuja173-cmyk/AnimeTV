@@ -27,7 +27,7 @@ const args = process.argv.slice(2);
 const argOf = (n, d) => { const i = args.indexOf(n); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
 const DB = argOf("--db", "");
 MAP = path.resolve(argOf("--artwork", MAP));
-const BASE = String(argOf("--base", "https://zenkaitv.com")).replace(/\/$/, "");
+const BASE = String(argOf("--base", "https://zxkai.fun")).replace(/\/$/, "");
 const IDS = argOf("--ids", "");
 const AIRING = argOf("--airing", "");
 const WRITE = args.includes("--write");

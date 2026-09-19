@@ -381,7 +381,7 @@
   // ?castdebug=1 on the page, or localStorage ztv:cast-debug=1, which survives the
   // navigations a Cast test involves. This gate is why the v683 instrumentation
   // produced no evidence on the one device that could produce it: every
-  // RemotePlayer listener and every media-session sample ran on zenkaitv.com and
+  // RemotePlayer listener and every media-session sample ran on zxkai.fun and
   // printed nothing, so the real-device test came back with nothing to read.
   const CAST_DEV = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)
     || params.get("castdebug") === "1"

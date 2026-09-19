@@ -1,6 +1,6 @@
 # ZenkaiTV (AnimeTV) — Project Guide
 
-TV-first anime streaming hub. Production: https://zenkaitv.com (Vercel auto-deploys on push to `main`).
+TV-first anime streaming hub. Production: https://zxkai.fun (Vercel auto-deploys on push to `main`).
 Repo: `JSolanoDev/AnimeTV`.
 
 ## Scope of work

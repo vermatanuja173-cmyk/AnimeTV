@@ -69,7 +69,7 @@ function makeEnv({ receiverBehaviour, candidates, manifest, variantManifest, dea
     },
     // Player-frame globals the cast block reads.
     params: new URLSearchParams("type=hls"),
-    sourceUrl: "https://zenkaitv.com/api/source?url=https%3A%2F%2Fplayer.zilla-networks.com%2Fm3u8%2Fabc&refererHost=player.zilla-networks.com",
+    sourceUrl: "https://zxkai.fun/api/source?url=https%3A%2F%2Fplayer.zilla-networks.com%2Fm3u8%2Fabc&refererHost=player.zilla-networks.com",
     title: "Test", episode: "E1", poster: "",
     streamType: (url, hint) => {
       const normalizedHint = String(hint || "").toLowerCase();
@@ -82,7 +82,7 @@ function makeEnv({ receiverBehaviour, candidates, manifest, variantManifest, dea
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
-  sandbox.location = { hostname: "zenkaitv.com", origin: "https://zenkaitv.com", search: "" };
+  sandbox.location = { hostname: "zxkai.fun", origin: "https://zxkai.fun", search: "" };
   sandbox.window.location = sandbox.location;
   sandbox.window.parent = sandbox.window;   // no parent frame: ladder falls back to own source
   sandbox.navigator = { languages: ["en"], language: "en" };
@@ -282,7 +282,7 @@ const FMP4_MANIFEST = "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXT-X-PLAYLIST-TYP
   const env = makeEnv({ receiverBehaviour: ["play"], manifest: MASTER, variantManifest: FMP4_MANIFEST });
   // The variant fetch returns the same manifest text in this harness, so a master
   // that is followed reports the fMP4 evidence from the variant.
-  const out = await vm.runInContext("detectCastVideoCodec('https://zenkaitv.com/api/source?url=x', 'application/x-mpegurl')", env.ctx);
+  const out = await vm.runInContext("detectCastVideoCodec('https://zxkai.fun/api/source?url=x', 'application/x-mpegurl')", env.ctx);
   check("6. master playlist codec still read", out.codec, "AV1");
   check("6b. packaging is no longer abandoned as UNKNOWN", out.packaging !== "UNKNOWN", true);
   check("6c. and it says the variant was followed", /^variant:/.test(out.packagingHow), true);
@@ -527,7 +527,7 @@ const TWO = [
   const rewrittenUris = String(rewritten).match(/\/api\/source\?[^"\n]+/g) || [];
   check("15y. generic HLS keys and segments stay on the short-request relay", rewrittenUris.length, 2);
   check("15z. rewritten HLS children preserve the provider Referer",
-    rewrittenUris.every((uri) => new URL(uri, "https://zenkaitv.com").searchParams.get("refererHost") === "sfastwish.com"), true);
+    rewrittenUris.every((uri) => new URL(uri, "https://zxkai.fun").searchParams.get("refererHost") === "sfastwish.com"), true);
 }
 
 /* 16. Nothing in the sender pretends it can ask the receiver about codecs. */
@@ -644,7 +644,7 @@ const TWO = [
     },
     proxiedStreamUrl: (url, referer) => {
       calls.push(["proxy", url, referer]);
-      const proxy = new URL("https://zenkaitv.com/api/source");
+      const proxy = new URL("https://zxkai.fun/api/source");
       proxy.searchParams.set("url", url);
       proxy.searchParams.set("refererHost", new URL(referer).host);
       return proxy.href;
@@ -652,7 +652,7 @@ const TWO = [
     streamTypeFromUrl: (url) => /\.m3u8(?:$|\?)/i.test(url) ? "hls" : "",
     buildCastCandidateList: () => [{ label: "AnimeAV1", url: "/api/source?url=av1", type: "hls" }],
     wait: () => new Promise(() => {}),
-    location: { origin: "https://zenkaitv.com" }
+    location: { origin: "https://zxkai.fun" }
   };
   castBackupSandbox.window = castBackupSandbox;
   const backupContext = vm.createContext(castBackupSandbox);

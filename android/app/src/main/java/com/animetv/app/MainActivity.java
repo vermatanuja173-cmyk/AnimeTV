@@ -29,7 +29,7 @@ public class MainActivity extends Activity {
     // not behind Vercel Deployment Protection.
     // Set to "" to fall back to the bundled offline catalog (browse only, no proxied
     // playback).
-    private static final String SITE_URL = "https://zenkaitv.com";
+    private static final String SITE_URL = "https://zxkai.fun";
 
     // Single live instance so the (separate) PlayerActivity can report playback
     // progress back into this WebView's JS for local watch-tracking.

@@ -18,7 +18,7 @@ ZenkaiTV is a static application plus one catch-all Node Function. The repositor
 5. Add only the optional environment variables the deployment needs.
 6. Deploy. Future pushes to `main` can deploy automatically through the Git integration.
 
-The live production site is <https://zenkaitv.com>.
+The live production site is <https://zxkai.fun>.
 
 ### Environment variables
 
@@ -57,9 +57,9 @@ npm run vercel-build
 After deployment:
 
 ```bash
-curl -I https://zenkaitv.com/
-curl -I https://zenkaitv.com/api/catalog
-curl https://zenkaitv.com/api/health
+curl -I https://zxkai.fun/
+curl -I https://zxkai.fun/api/catalog
+curl https://zxkai.fun/api/health
 ```
 
 Verify the homepage, search, title details, seasons, episode selection, playback, Cast controls, schedule, favorites, adult-mode isolation, and a mobile viewport. A warm `/api/catalog` request should report an edge cache hit in Vercel response headers.
@@ -77,7 +77,7 @@ The server binds to `0.0.0.0` and uses `PORT` when supplied, otherwise port `417
 
 ## Android clients
 
-The Android variants currently point at `https://zenkaitv.com` from `MainActivity.java`, keeping mobile and TV clients on the same deployed application and API behavior. Build both with:
+The Android variants currently point at `https://zxkai.fun` from `MainActivity.java`, keeping mobile and TV clients on the same deployed application and API behavior. Build both with:
 
 ```powershell
 npm run android:build

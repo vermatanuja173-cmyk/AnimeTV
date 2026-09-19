@@ -111,7 +111,7 @@ check("direct files do not wait for the HLS library script",
 
 /* ---- a realistic URL stays well under the header limit ---- */
 {
-  const url = new URL("https://zenkaitv.com/player/player.html");
+  const url = new URL("https://zxkai.fun/player/player.html");
   url.searchParams.set("v", "694");
   url.searchParams.set("src", "/api/source?url=https%3A%2F%2Fplayer.example.com%2Fm3u8%2Fabc123");
   url.searchParams.set("title", "It Didn't Have to Be Magic...");

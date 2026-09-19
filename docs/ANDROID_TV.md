@@ -7,7 +7,7 @@ The Android project builds two variants from the same responsive ZenkaiTV applic
 | `mobile` | Phones and tablets | `android/app/build/outputs/apk/mobile/debug/app-mobile-debug.apk` |
 | `tv` | Android TV and Google TV | `android/app/build/outputs/apk/tv/debug/app-tv-debug.apk` |
 
-Both variants currently load `https://zenkaitv.com`, configured by `SITE_URL` in `android/app/src/main/java/com/animetv/app/MainActivity.java`.
+Both variants currently load `https://zxkai.fun`, configured by `SITE_URL` in `android/app/src/main/java/com/animetv/app/MainActivity.java`.
 
 ## Build both APKs
 

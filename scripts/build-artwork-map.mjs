@@ -13,7 +13,7 @@
 //
 // Runs against the deployed API routes (they hold the TMDB key), so no local
 // secrets are needed:
-//   node scripts/build-artwork-map.mjs [--limit N] [--base https://zenkaitv.com] [--force]
+//   node scripts/build-artwork-map.mjs [--limit N] [--base https://zxkai.fun] [--force]
 //
 // Resumable: an existing map is loaded and only missing/failed ids are retried,
 // so a rate-limited run can simply be run again.
@@ -47,7 +47,7 @@ const argOf = (name, fallback) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] ? args[i + 1] : fallback;
 };
-const BASE = String(argOf("--base", "https://zenkaitv.com")).replace(/\/$/, "");
+const BASE = String(argOf("--base", "https://zxkai.fun")).replace(/\/$/, "");
 const LIMIT = Number(argOf("--limit", "0")) || 0;
 const FORCE = args.includes("--force");
 const CONCURRENCY = Number(argOf("--concurrency", "4")) || 4;

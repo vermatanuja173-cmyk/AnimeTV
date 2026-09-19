@@ -19396,11 +19396,11 @@ trailerButton?.addEventListener("click", () => {
 });
 
 // Build a shareable deep link to a specific anime, e.g.
-// https://zenkaitv.com/anime/naruto.
+// https://zxkai.fun/anime/naruto.
 function buildAnimeShareUrl(show) {
-  if (!show) return "https://zenkaitv.com";
+  if (!show) return "https://zxkai.fun";
   const base = /^https?:\/\/(localhost|127\.|192\.168\.|\[?::1)/i.test(location.origin)
-    ? "https://zenkaitv.com"   // never share a localhost link
+    ? "https://zxkai.fun"   // never share a localhost link
     : location.origin;
   return `${base}${animePathForShow(show)}`;
 }

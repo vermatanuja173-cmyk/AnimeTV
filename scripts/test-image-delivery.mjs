@@ -20,7 +20,7 @@ const code = [
   slice("function artworkCanUseContainedPoster(", "\nfunction backdropPixelsLookUseful")
 ].join("\n");
 
-const ctx = vm.createContext({ URL, console, location: { protocol: "https:", origin: "https://zenkaitv.com", href: "https://zenkaitv.com/" } });
+const ctx = vm.createContext({ URL, console, location: { protocol: "https:", origin: "https://zxkai.fun", href: "https://zxkai.fun/" } });
 vm.runInContext(code, ctx, { filename: "client.js extract" });
 const imageDeliveryUrl = vm.runInContext("imageDeliveryUrl", ctx);
 const imageDeliverySrcSet = vm.runInContext("imageDeliverySrcSet", ctx);

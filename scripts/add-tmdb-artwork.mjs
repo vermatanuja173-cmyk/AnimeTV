@@ -24,7 +24,7 @@ const SRC = path.join(root, "scraper", "anime_metadata.json");
 const args = process.argv.slice(2);
 const argOf = (n, d) => { const i = args.indexOf(n); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
 const DB = argOf("--db", "");
-const BASE = String(argOf("--base", "https://zenkaitv.com")).replace(/\/$/, "");
+const BASE = String(argOf("--base", "https://zxkai.fun")).replace(/\/$/, "");
 const WRITE = args.includes("--write");
 const LIMIT = Number(argOf("--limit", "0")) || 0;
 const MIN = Number(argOf("--min", "80"));

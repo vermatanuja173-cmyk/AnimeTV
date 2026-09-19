@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Continue"
 $env:Path = "$env:SystemRoot\System32;$env:Path"
 
-$aliasDomain = "animesenpai.in"
+$aliasDomain = "zxkai.fun"
 
 Write-Host "Building ZenkaiTV static bundle..." -ForegroundColor Cyan
 npm run vercel-build

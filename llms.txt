@@ -4,11 +4,11 @@ ZenkaiTV is an anime streaming discovery interface. Browse, search, and stream a
 
 ## Main Pages
 
-- [Home](https://zenkaitv.com/)
-- [Anime Catalog / Search](https://zenkaitv.com/#library)
-- [Weekly Schedule](https://zenkaitv.com/#schedule)
-- [Favorites](https://zenkaitv.com/#favorites)
-- [Settings](https://zenkaitv.com/#settings)
+- [Home](https://zxkai.fun/)
+- [Anime Catalog / Search](https://zxkai.fun/#library)
+- [Weekly Schedule](https://zxkai.fun/#schedule)
+- [Favorites](https://zxkai.fun/#favorites)
+- [Settings](https://zxkai.fun/#settings)
 
 ## Features
 
