@@ -8082,6 +8082,24 @@ function schedulePlaybackSourceOptions(show, episode, seasonNumber = 1, options 
   return withAutoReplay(promise);
 }
 
+function resetPlaybackSourceLookup(show, episode, seasonNumber = 1) {
+  if (!episode) return;
+  const lookupKey = playbackLookupKey(show, episode, seasonNumber);
+  if (lookupKey) {
+    sourceOptionsBackgroundLookups.delete(lookupKey);
+    pendingSourceLookups.delete(lookupKey);
+  }
+  episode.sourceOptionsChecked = "";
+  episode.playbackSourceLookupComplete = false;
+  episode.sourceOptionsPending = false;
+  episode.animeAv1SourcesChecked = false;
+  episode.jkAnimeSourcesChecked = false;
+  episode.tioAnimeSourcesChecked = false;
+  episode.serverChecks = {};
+  episode.sourceOptions = [];
+  if (episode._failedSourceIds) episode._failedSourceIds.clear();
+}
+
 function stripSeasonFromTitle(title = "") {
   return String(title)
     .replace(/\bseason\s*\d+\b/ig, "")
@@ -17911,7 +17929,14 @@ async function playActiveShow(options = {}) {
       "beforeend",
       `<button class="external-play-button focusable" type="button" data-retry-episode>Retry Episode</button>`
     );
-    frame.querySelector("[data-retry-episode]")?.addEventListener("click", () => playActiveShow());
+    frame.querySelector("[data-retry-episode]")?.addEventListener("click", () => {
+      const selected = state.activeEpisode;
+      if (selected?.episode) {
+        const { seasonNumber } = selectedSeasonIdentity(show, selected);
+        resetPlaybackSourceLookup(show, selected.episode, seasonNumber);
+      }
+      playActiveShow();
+    });
     refreshFocusables();
     return;
   }
@@ -18195,7 +18220,9 @@ function renderPlaybackError(frame, episode, options = {}) {
   setPlayerCinema(shell, true, { silent: true });
   frame.querySelector("[data-try-another]")?.addEventListener("click", () => renderSourcePickerIn(frame));
   frame.querySelector("[data-retry-episode]")?.addEventListener("click", () => {
-    if (episode._failedSourceIds) episode._failedSourceIds.clear();
+    const selected = state.activeEpisode;
+    const { seasonNumber } = selectedSeasonIdentity(state.activeShow || {}, selected);
+    resetPlaybackSourceLookup(state.activeShow || {}, episode, seasonNumber);
     playActiveShow();
   });
   frame.querySelector("[data-player-exit]")?.addEventListener("click", exitPlayerToSources);
