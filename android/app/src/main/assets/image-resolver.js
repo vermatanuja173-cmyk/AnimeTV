@@ -1,0 +1,1465 @@
+/**
+ * zxkai Image Resolver
+ *
+ * One reusable system that picks the best available image for every surface
+ * (episode thumbnails, pre-player backgrounds, pre-player posters) using a
+ * strict priority chain, and enriches AniList anime with TMDB artwork
+ * (episode stills, season posters, backdrops) when a TMDB key is configured.
+ *
+ * Design notes
+ * ------------
+ * - AniList already provides covers, banners, titles, and airing schedules, but
+ *   it does NOT provide episode-level thumbnails. TMDB fills that gap.
+ * - The TMDB API key lives ONLY on the server (`/api/tmdb/*`). This module just
+ *   calls those proxy routes, scores the candidates, rejects low-confidence
+ *   matches, and caches the winning match so we never re-search every render.
+ * - When TMDB is not configured (or no confident match exists) every priority
+ *   chain falls through to AniList artwork — the app keeps working unchanged.
+ */
+const ImageResolver = (function () {
+  "use strict";
+
+  const TMDB_IMG_BASE = "https://image.tmdb.org/t/p";
+  const MATCH_CACHE_PREFIX = "zenkaitv:tmdb-match:v18:";
+  const MATCH_CACHE_TTL_MS = 1000 * 60 * 60 * 24; // Refresh airing episode stills daily.
+  // Each record includes the TMDB season that produced its app-season entry. A
+  // transient mapping made app S3 cache TMDB S1 under the old key, so every
+  // later visit faithfully replayed the wrong episode titles and stills.
+  // v8 also invalidates pre-canonical-identity entries after the MAL-only and
+  // aggregate-season fixes, so users do not wait a day for corrected metadata.
+  const SEASON_ART_CACHE_PREFIX = "zenkaitv:tmdb-season-art:v8:";
+  const SEASON_ART_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+  const FAILED_CACHE_KEY = "zenkaitv:img-failed:v1";
+  const FAILED_CACHE_MAX = 400;
+  const CONFIDENCE_THRESHOLD = 72; // reject loose matches that can attach the wrong anime artwork
+
+  // Debug logging — on by default, silence with localStorage zenkaitv:img-debug=0
+  function debugEnabled() {
+    try { return localStorage.getItem("zenkaitv:img-debug") !== "0"; } catch { return true; }
+  }
+  function debug(...args) {
+    if (debugEnabled()) console.debug("[ImageResolver]", ...args);
+  }
+
+  // ── TMDB image URL builders ────────────────────────────────────────────────
+  function tmdbImage(path, size) {
+    const p = String(path || "").trim();
+    if (!p) return "";
+    return `${TMDB_IMG_BASE}/${size}${p.startsWith("/") ? "" : "/"}${p}`;
+  }
+  const tmdbStillUrl   = (p) => tmdbImage(p, "w780");    // 16:9 episode still
+  const tmdbBackdropUrl = (p) => tmdbImage(p, "original"); // highest-quality wide backdrop
+  const tmdbPosterUrl  = (p) => tmdbImage(p, "w780");    // high-resolution vertical poster
+
+  // ── Failed-image cache (so we never retry a known-broken URL) ───────────────
+  let _failedMemory = null;
+  function failedSet() {
+    if (_failedMemory) return _failedMemory;
+    _failedMemory = new Set();
+    try {
+      localStorage.removeItem(FAILED_CACHE_KEY);
+    } catch { /* ignore */ }
+    return _failedMemory;
+  }
+  function markImageFailed(url) {
+    const u = String(url || "").trim();
+    if (!u) return;
+    const set = failedSet();
+    if (set.has(u)) return;
+    set.add(u);
+    debug("marked broken image, will skip from now on:", u);
+  }
+  function isImageFailed(url) {
+    return failedSet().has(String(url || "").trim());
+  }
+
+  // Return the first usable image: non-empty, a real http(s)/data URL, and not
+  // already known to be broken.
+  function firstValidImage(candidates) {
+    for (const candidate of candidates || []) {
+      const url = String(candidate || "").trim();
+      if (!url) continue;
+      if (isImageFailed(url)) continue;
+      if (!/^(https?:|data:|\/|\.\/)/i.test(url)) continue;
+      return url;
+    }
+    return "";
+  }
+
+  // ── Title matching + confidence scoring ─────────────────────────────────────
+  function norm(value) {
+    let val = String(value || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      // Preserve a-z, 0-9, Chinese ideographs, Hiragana, Katakana, and full-width alphanumeric
+      .replace(/[^a-z0-9\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uff10-\uff19\uff41-\uff5a\uff21-\uff3a]+/gi, " ");
+
+    val = val.replace(/\bdiamond no ace\b/g, "ace of diamond")
+             .replace(/\bdia no ace\b/g, "ace of diamond")
+             .replace(/\bdaiya no ace\b/g, "ace of diamond")
+             .replace(/\bshin seiki evangelion\b/g, "neon genesis evangelion")
+             .replace(/\byofukashi no uta\b/g, "call of the night")
+             .replace(/\byoukoso jitsuryoku shijou shugi no kyoushitsu e\b/g, "classroom of the elite")
+             .replace(/\bclassroom of (?:the\s+)?elite.*\b/g, "classroom of the elite")
+             .replace(/\bhime\s*kishi\s*wa\s*barbaroi\s*no\s*yome\b/g, "the warrior princess and the barbaric king")
+             .replace(/\bkaoru hana wa rin to saku\b/g, "the fragrant flower blooms with dignity")
+             .replace(/\bbleach sennen kessen hen.*\b/g, "bleach")
+             .replace(/\bbleach thousand year blood war.*\b/g, "bleach")
+             .replace(/\bjujutsu kaisen shimetsu kaiyu.*\b/g, "jujutsu kaisen")
+             .replace(/\bjujutsu kaisen culling game.*\b/g, "jujutsu kaisen")
+             .replace(/\bre zero.*\b/g, "re zero starting life in another world")
+             .replace(/\btensei shitara slime datta ken.*\b/g, "that time i got reincarnated as a slime")
+             .replace(/\bmairimashita\s*iruma\s*kun.*\b/g, "welcome to demon school iruma kun")
+             .replace(/\bjidou hanbaiki ni umarekawatta ore wa meikyuu wo samayou.*\b/g, "reborn as a vending machine i now wander the dungeon")
+             .replace(/\bhimesama\s*goumon\s*no jikan desu.*\b/g, "tis time for torture princess")
+             .replace(/\benen no shouboutai.*\b/g, "fire force")
+             .replace(/\bkanojo okarishimasu.*\b/g, "rent a girlfriend")
+             .replace(/\byozakura\s*san\s*chi\s*no\s*daisakusen.*\b/g, "mission yozakura family")
+             .replace(/\bsaikyou no shokugyou wa yuusha demo kenja demo naku kanteishi.*?\b/g, "the strongest job is apparently not a hero or a sage but an appraiser")
+             .replace(/\byomi no tsugai\b/g, "daemons of the shadow realm")
+             .replace(/\btongari boushi no atelier\b/g, "witch hat atelier")
+             .replace(/\bjishou akuyaku reijou na konyakusha no kansatsu kiroku\b/g, "an observation log of my fiancee a self proclaimed villainess")
+             .replace(/\bclass de 2\s*banme ni kawaii onnanoko to tomodachi ni natta\b/g, "i became friends with the second cutest girl in class")
+             .replace(/\breplica datte koi wo suru\b/g, "even a replica wants to fall in love")
+             .replace(/\bkuroneko to majo no kyoushitsu\b/g, "the classroom of a black cat and a witch")
+             .replace(/\bkami no niwatsuki kusunoki\s*tei\b/g, "kusunoki s garden of gods")
+             .replace(/\bmaidsan wa taberu dake\b/g, "the food diary of miss maid")
+             .replace(/\bmaid san wa taberu dake\b/g, "the food diary of miss maid")
+             .replace(/\bichijouma mankitsugurashi\b/g, "ichijyoma mankitsu gurashi")
+             .replace(/\bingoku danchi\b/g, "ingoku danchi deviant s apartment complex")
+             .replace(/\byuusha no kuzu\b/g, "scum of the brave")
+             .replace(/\bhikaru ga shinda natsu\b/g, "the summer hikaru died")
+             .replace(/\bboku no kokoro no yabai yatsu\b/g, "the dangers in my heart")
+             .replace(/\bsummer\s*time\s*render\b/g, "summer time rendering")
+             .replace(/\bsaiki kusuo no psi\s*nan\b/g, "the disastrous life of saiki k")
+             .replace(/\bsaiki kusuo no\s*nan\b/g, "the disastrous life of saiki k")
+             .replace(/\bmahou no shimai luluttolilly\b/g, "magical sisters luluttolilly")
+             .replace(/\bhaikyuu to (?:the )?top\b/g, "haikyu")
+             .replace(/\bhaikyuu\b/g, "haikyu")
+             .replace(/\bponkotsu fuuki\s*iin to skirt take ga futekisetsu na jk no hanashi\b/g, "the klutzy class monitor and the girl with the short skirt")
+             .replace(/\bponkotsu fuukiin to skirt take ga futekisetsu na jk no hanashi\b/g, "the klutzy class monitor and the girl with the short skirt");
+
+    return val
+      .replace(/\b(season|part|tv|ova|ona|the|a|an)\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function tokenSimilarity(a, b) {
+    const ta = new Set(norm(a).split(" ").filter(Boolean));
+    const tb = new Set(norm(b).split(" ").filter(Boolean));
+    if (!ta.size || !tb.size) return 0;
+    let shared = 0;
+    ta.forEach((t) => { if (tb.has(t)) shared += 1; });
+    return shared / new Set([...ta, ...tb]).size; // Jaccard 0..1
+  }
+
+    function stripSequelWords(str) {
+    return norm(str)
+      .replace(/[第]?\s*\d+\s*[季期话話集]/g, "")
+      .replace(/[第]\s*[一二三四五六七八九十\d]+\s*[季期话話集]/g, "")
+      .replace(/\b\d+(st|nd|rd|th)\b/g, "")
+      .replace(/\b(season|part|cour|capitulo|temp|temporada|act|stage|arc|saga|chapter|volume|version|edition|special|specials|ova|ona|movie|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/g, "")
+      .replace(/\b(s\d+|p\d+|c\d+)\b/g, "")
+      .replace(/\b\d+\b/g, "")
+      .replace(/\b(ii|iii|iv|v|vi|vii|viii|ix|x)\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // Best title-only score (0..100) between any AniList title/synonym and a
+  // TMDB candidate name/original_name.
+  function titleScore(anime, candidate) {
+    const animeTitles = [
+      anime.englishTitle, anime.romajiTitle, anime.nativeTitle,
+      anime.title?.english, anime.title?.romaji, anime.title?.native,
+      anime.title,
+      ...(Array.isArray(anime.synonyms) ? anime.synonyms : [])
+    ].map((t) => String(t || "").trim()).filter(Boolean);
+    const candTitles = [candidate.name, candidate.original_name]
+      .map((t) => String(t || "").trim()).filter(Boolean);
+
+    const cleanSpaces = (s) => String(s || "").replace(/\s+/g, "");
+
+    let best = 0;
+    for (const at of animeTitles) {
+      for (const ct of candTitles) {
+        const na = norm(at);
+        const nc = norm(ct);
+        if (!na || !nc) continue;
+        let s;
+        if (na === nc) {
+          s = 100;
+        } else if (cleanSpaces(na) === cleanSpaces(nc)) {
+          s = 98;
+        } else {
+          const sa = stripSequelWords(at);
+          const sc = stripSequelWords(ct);
+          if (sa && sc && (sa === sc || cleanSpaces(sa) === cleanSpaces(sc))) {
+            s = 96;
+          } else if (na.includes(nc) || nc.includes(na)) {
+            s = 82;
+          } else {
+            s = Math.round(tokenSimilarity(at, ct) * 78);
+          }
+        }
+        if (s > best) best = s;
+      }
+    }
+    return best;
+  }
+
+  function yearOf(dateStr) {
+    const m = /(\d{4})/.exec(String(dateStr || ""));
+    return m ? Number(m[1]) : null;
+  }
+
+  // Final confidence: title score adjusted by air-year proximity. Big year gaps
+  // are only forgiven when the title is a very strong match.
+  function scoreCandidate(anime, candidate) {
+    if (Array.isArray(candidate.genre_ids) && candidate.genre_ids.length && !candidate.genre_ids.includes(16)) {
+      return { confidence: 0, reason: "not animation", tScore: 0 };
+    }
+    const tScore = titleScore(anime, candidate);
+    const animeYear = Number(anime.seasonYear || anime.year || 0) || null;
+    const candYear = yearOf(candidate.first_air_date);
+    let yearAdj = 0;
+    let reason = `title=${tScore}`;
+    if (animeYear && candYear) {
+      const diff = Math.abs(animeYear - candYear);
+      if (diff === 0) yearAdj = 6;
+      else if (diff === 1) yearAdj = -2;
+      else if (diff === 2) yearAdj = tScore >= 85 ? -6 : -16;
+      else yearAdj = tScore >= 90 ? -8 : -28;
+      reason += ` year(${animeYear} vs ${candYear} Δ${diff})=${yearAdj}`;
+    } else {
+      reason += " year(n/a)";
+    }
+
+    let genreAdj = 0;
+    const genres = candidate.genre_ids || [];
+    if (Array.isArray(genres) && genres.length > 0) {
+      if (genres.includes(16)) {
+        genreAdj = 15;
+        reason += " genre(animation)=+15";
+      } else {
+        genreAdj = -35;
+        reason += " genre(non-animation)=-35";
+      }
+    }
+
+    const confidence = Math.max(0, Math.min(100, tScore + yearAdj + genreAdj));
+    return { confidence, reason, tScore };
+  }
+
+  // ── Season mapping (AniList season/part -> TMDB season number) ──────────────
+  function pickTmdbSeason(anime, tmdbShow) {
+    const real = (tmdbShow.seasons || []).filter((s) => Number(s.season_number) > 0 && Number(s.episode_count) > 0);
+    if (!real.length) return { season: null, reason: "no numbered TMDB seasons" };
+
+    const titleToParse = anime.title || anime.romajiTitle || anime.englishTitle || "";
+    const lowerTitle = (typeof titleToParse === "string" ? titleToParse : JSON.stringify(titleToParse)).toLowerCase();
+    if (lowerTitle.includes("sennen kessen-hen") || lowerTitle.includes("thousand-year blood war")) {
+      const tybwSeason = real.find((s) => s.name.toLowerCase().includes("thousand-year blood war"));
+      if (tybwSeason) return { season: tybwSeason, reason: "Bleach Thousand-Year Blood War mapping" };
+    }
+    // Ascendance of a Bookworm Part 3 (Honzuki no Gekokujou: Ryoushu no Youjo) is
+    // TMDB Season 2 "Adopted Daughter of an Archduke". Its title also contains the
+    // S1 name ("Ascendance of a Bookworm"), which would otherwise win the generic
+    // name match below — so map it explicitly to the S2 stills.
+    if (lowerTitle.includes("ryoushu no youjo") || lowerTitle.includes("adopted daughter of an archduke")) {
+      const s = real.find((x) => x.name.toLowerCase().includes("adopted daughter of an archduke"));
+      if (s) return { season: s, reason: "Honzuki Ryoushu no Youjo mapping" };
+    }
+    // TMDB combines the first three AniList entries of Honzuki into its Season 1.
+    // They still need distinct app seasons so the year/count scoper below can
+    // select episodes 1-14, 15-26 and 27-36 respectively.
+    if (lowerTitle.includes("honzuki no gekokujou") || lowerTitle.includes("ascendance of a bookworm")) {
+      const s = real.find((x) => x.name.toLowerCase().includes("ascendance of a bookworm"))
+        || real.find((x) => Number(x.season_number) === 1);
+      if (s) return { season: s, reason: "Honzuki aggregate Season 1 mapping" };
+    }
+
+    if (anime.tmdbFranchiseFallback) {
+      const requestedSeason = Number(anime.seasonNumber || anime.canonicalSeasonNumber || 0);
+      const carrierSeason = Number(anime.tmdbFranchiseCarrierSeason || 0);
+      const exact = requestedSeason
+        ? real.find((season) => Number(season.season_number) === requestedSeason)
+        : null;
+      if (exact && carrierSeason && real.some((season) => Number(season.season_number) === carrierSeason)) {
+        return { season: exact, reason: "verified franchise-series season" };
+      }
+      return { season: null, reason: "inherited TMDB series does not contain this season" };
+    }
+
+    if (real.length === 1) return { season: real[0], reason: "only one TMDB season" };
+
+    const animeTitles = [
+      anime.title?.english, anime.title?.romaji, anime.title?.native,
+      anime.englishTitle, anime.romajiTitle, anime.nativeTitle,
+      anime.title,
+      ...(Array.isArray(anime.synonyms) ? anime.synonyms : [])
+    ].map((t) => norm(t)).filter(Boolean);
+
+    for (const s of real) {
+      const sName = norm(s.name);
+      if (sName && sName.length > 4) {
+        if (animeTitles.some(t => t === sName)) {
+          return { season: s, reason: `season name match ("${s.name}")` };
+        }
+      }
+    }
+
+    let parsedSeasonNum = null;
+    if (typeof SeasonNormalization !== "undefined") {
+      parsedSeasonNum = SeasonNormalization.parseTitle(titleToParse).seasonNumber;
+    }
+    if (!parsedSeasonNum && typeof extractSeasonNumber === "function") {
+      parsedSeasonNum = extractSeasonNumber(titleToParse, 1);
+    }
+
+    const animeSeasonNum = Number(anime.seasonNumber || parsedSeasonNum || 1);
+    const animeYear = Number(anime.seasonYear || anime.year || 0) || null;
+
+    // Named arcs can shift TMDB's numeric index: "Link Click 3" is TMDB S4.
+    if (typeof SeasonNormalization !== "undefined" && animeSeasonNum > 1) {
+      const byName = real.find(season => {
+        if (/^season\s*\d+$/i.test(season.name || "")) return false;
+        if (SeasonNormalization.parseTitle(season.name || "").seasonNumber !== animeSeasonNum) return false;
+        const base = stripSequelWords(season.name);
+        return base && animeTitles.some(title => stripSequelWords(title) === base);
+      });
+      if (byName) return { season: byName, reason: "named season designation" };
+    }
+
+    // 1) Match by season number when it lines up with a TMDB season.
+    if (animeSeasonNum) {
+      const bySeason = real.find((s) => Number(s.season_number) === animeSeasonNum);
+      if (bySeason) return { season: bySeason, reason: "season number match" };
+    }
+    // 2) Match by air-date year (most reliable for split-cour anime).
+    if (animeYear) {
+      const byYear = real
+        .map((s) => ({ s, diff: Math.abs((yearOf(s.air_date) || 9999) - animeYear) }))
+        .sort((a, b) => a.diff - b.diff)[0];
+      if (byYear && byYear.diff <= 1) return { season: byYear.s, reason: `year match (Δ${byYear.diff})` };
+    }
+    // 3) Uncertain — don't guess wrong; caller will keep AniList fallback for
+    //    season-specific art but can still use show-level poster/backdrop.
+    return { season: null, reason: "uncertain mapping — keeping AniList fallback" };
+  }
+
+  // ── TMDB enrichment ─────────────────────────────────────────────────────────
+  function readMatchCache(anilistId) {
+    try {
+      const cached = JSON.parse(localStorage.getItem(MATCH_CACHE_PREFIX + anilistId) || "null");
+      if (!cached || Date.now() - Number(cached.savedAt || 0) > MATCH_CACHE_TTL_MS) {
+        if (cached) localStorage.removeItem(MATCH_CACHE_PREFIX + anilistId);
+        return null;
+      }
+      return cached.data || null;
+    } catch { return null; }
+  }
+  function writeMatchCache(anilistId, data) {
+    try {
+      localStorage.setItem(MATCH_CACHE_PREFIX + anilistId, JSON.stringify({ savedAt: Date.now(), data }));
+    } catch { /* small TV storage quota — fine, we just re-resolve next time */ }
+  }
+
+  function seasonArtCacheKey(anime, seasonNumber) {
+    const id = anime?.anilistId || anime?.id || anime?.tmdbId || "unknown";
+    return `${SEASON_ART_CACHE_PREFIX}${id}:s${seasonNumber}`;
+  }
+
+  function readSeasonArtCache(anime, seasonNumber, expectedTmdbSeasonNumber = 0) {
+    try {
+      const key = seasonArtCacheKey(anime, seasonNumber);
+      const cached = JSON.parse(localStorage.getItem(key) || "null");
+      if (!cached || Date.now() - Number(cached.savedAt || 0) > SEASON_ART_CACHE_TTL_MS) {
+        if (cached) localStorage.removeItem(key);
+        return null;
+      }
+      const data = cached.data || null;
+      const cachedAniListId = String(data?.anilistId || "");
+      const currentAniListId = String(anime?.anilistId || "");
+      const cachedTmdbId = String(data?.tmdbId || "");
+      const currentTmdbId = String(anime?.tmdbId || "");
+      const cachedTmdbSeason = Number(data?.tmdbSeasonNumber || 0);
+      const wrongIdentity = cachedAniListId && currentAniListId && cachedAniListId !== currentAniListId;
+      const wrongTmdb = cachedTmdbId && currentTmdbId && cachedTmdbId !== currentTmdbId;
+      const wrongSeason = expectedTmdbSeasonNumber > 0 && cachedTmdbSeason !== Number(expectedTmdbSeasonNumber);
+      if (!data || wrongIdentity || wrongTmdb || wrongSeason) {
+        localStorage.removeItem(key);
+        return null;
+      }
+      return data;
+    } catch { return null; }
+  }
+
+  function writeSeasonArtCache(anime, seasonNumber, data) {
+    try {
+      localStorage.setItem(
+        seasonArtCacheKey(anime, seasonNumber),
+        JSON.stringify({ savedAt: Date.now(), data })
+      );
+    } catch { /* Artwork still remains in memory when storage is full. */ }
+  }
+
+  function knownSeasonEpisodeCount(anime, season) {
+    return Math.max(
+      0,
+      Number(season?.episodes?.length) || 0,
+      Number(season?.episodeCount) || 0,
+      Number(season?.sourceEpisodeCount) || 0,
+      Number(anime?.sourceEpisodeCount) || 0,
+      Number(anime?.sourceEpisodeIds?.length) || 0,
+      Number(anime?.totalEpisodes) || 0,
+      Number(anime?.episodeCount) || 0,
+      Number(anime?.episodes?.length) || 0
+    );
+  }
+
+  function seasonArtCoverage(data) {
+    const recorded = Number(data?.requestedEpisodeCount) || 0;
+    if (recorded > 0) return recorded;
+    // Older cache rows did not record the count. A row with only one still is
+    // not complete just because TMDB supplied metadata for the whole season.
+    return Math.min(
+      Object.keys(data?.metas || {}).length,
+      Object.keys(data?.stills || {}).length
+    );
+  }
+
+  function applySeasonArtwork(anime, seasonNumber, data = {}) {
+    if (!anime || !seasonNumber) return;
+    if (!anime.tmdbStillsBySeason) anime.tmdbStillsBySeason = {};
+    if (!anime.tmdbEpisodesBySeasonNum) anime.tmdbEpisodesBySeasonNum = {};
+    if (!anime.tmdbSeasonBackdropsBySeason) anime.tmdbSeasonBackdropsBySeason = {};
+    if (!anime.tmdbSeasonPostersBySeason) anime.tmdbSeasonPostersBySeason = {};
+    anime.tmdbStillsBySeason[seasonNumber] = data.stills || {};
+    anime.tmdbEpisodesBySeasonNum[seasonNumber] = data.metas || {};
+    if (!anime._tmdbSeasonArtCoverage) anime._tmdbSeasonArtCoverage = {};
+    anime._tmdbSeasonArtCoverage[seasonNumber] = seasonArtCoverage(data);
+    if (data.poster) anime.tmdbSeasonPostersBySeason[seasonNumber] = data.poster;
+    if (data.backdrop) anime.tmdbSeasonBackdropsBySeason[seasonNumber] = data.backdrop;
+  }
+
+  const _inFlight = new Map();
+  let _tmdbConfigured = null; // null=unknown, true/false once a route has answered
+
+  function applyResolvedMatch(anime, data) {
+    if (!anime || !data) return;
+    const sameIdentity = !anime.tmdbId || Number(anime.tmdbId) === Number(data.tmdbId);
+    if (!sameIdentity) delete anime._paintedCarouselArtwork;
+    anime.tmdbId = data.tmdbId ?? anime.tmdbId ?? null;
+    anime.tmdbMatchConfidence = data.confidence ?? anime.tmdbMatchConfidence ?? 0;
+    // A runtime resolve can land on a different TMDB file than the catalogue's
+    // curated one, and often a much smaller one: One Piece ships the 3840x2160
+    // primary backdrop from the artwork map, but resolving at runtime produced a
+    // 1280x720 "original" and overwrote it - which is what "not 4k" looked like.
+    // TMDB "original" only means "as uploaded", so it is not a resolution promise.
+    const pinned = Boolean(anime._artworkPinned && sameIdentity);
+    anime.tmdbPoster = (pinned && anime.tmdbPoster) || data.showPoster || anime.tmdbPoster || null;
+    anime.tmdbBackdrop = (pinned && anime.tmdbBackdrop) || data.showBackdrop || anime.tmdbBackdrop || null;
+    anime.tmdbSeasonPoster = data.seasonPoster || anime.tmdbSeasonPoster || null;
+    anime.tmdbEpisodeStills = data.episodeStills || anime.tmdbEpisodeStills || {};
+    anime.tmdbEpisodesByNum = data.episodesByNum || anime.tmdbEpisodesByNum || {};
+    anime.tmdbSeasons = data.seasons || anime.tmdbSeasons || [];
+    // Convenience bundle matching the documented imageSources shape.
+    anime.imageSources = {
+      poster: firstValidImage([anime.tmdbSeasonPoster, anime.tmdbPoster, anime.coverImageLarge, anime.image, anime.coverImage]) || null,
+      backdrop: firstValidImage([anime.tmdbBackdrop, anime.bannerImage, anime.banner, anime.tmdbSeasonPoster, anime.coverImageLarge]) || null,
+      banner: anime.bannerImage || anime.banner || null
+    };
+    anime.images = {
+      poster: firstValidImage([anime.tmdbSeasonPoster, anime.tmdbPoster, anime.coverImageLarge, anime.image, anime.coverImage]) || null,
+      cover: anime.coverImageLarge || anime.image || anime.coverImage || null,
+      banner: anime.bannerImage || anime.banner || null,
+      backdrop: firstValidImage([anime.tmdbBackdrop, anime.bannerImage, anime.banner, anime.tmdbSeasonPoster, anime.coverImageLarge]) || null,
+      thumbnail: firstValidImage([anime.tmdbSeasonPoster, anime.coverImageLarge, anime.image]) || null,
+      episodeStill: null
+    };
+  }
+
+  // ── Curated TMDB matches ────────────────────────────────────────────────────
+  // A handful of shows can't be found by the fuzzy title search: their romaji
+  // title differs too much from the TMDB English title ("Marriagetoxin" vs
+  // "Marriage Toxin", "Kill Ao" vs "Kill Blue"), so the confidence check rejects
+  // them. The result is the show banner repeated as every episode thumbnail and a
+  // low-resolution backdrop. Pinning the TMDB id here forces the right match;
+  // season/episode mapping then runs normally (franchise seasons still map by
+  // number/year, e.g. Re:Zero S4, Rent-a-Girlfriend S5). Each entry lists the
+  // title spellings we may receive from AniList or the scraper. ids verified on
+  // themoviedb.org.
+  const TMDB_ID_OVERRIDES = [
+    { tmdb: 123542, names: ["Shiguang Dailiren", "Shiguang Dailiren II", "Shiguang Dailiren III", "Shiguang Dailiren: Yingdu Pian", "Link Click", "Link Click Season 2", "Link Click Season 3", "Link Click: Bridon Arc"] },
+    // Long-running catalog anchors. Their generic names produce many TMDB search
+    // candidates, so an exact series id is required before collecting hundreds
+    // of season-scoped episode titles and stills.
+    { tmdb: 46260, names: ["Naruto"] },
+    { tmdb: 37854, names: ["One Piece"] },
+    { tmdb: 70881, names: ["Boruto: Naruto Next Generations", "Boruto Naruto Next Generations"] },
+    // Bleach TYBW: the dedicated TMDB show (#308329) carries NO episode stills,
+    // so every episode fell back to the show backdrop. Pin to the main Bleach
+    // entry (#30984) whose "Thousand-Year Blood War" season DOES have stills;
+    // pickTmdbSeason() already maps the Sennen Kessen-hen title to that season.
+    { tmdb: 30984, names: ["Bleach: Sennen Kessen-hen", "Bleach Sennen Kessen-hen", "Bleach: Sennen Kessen-hen - Soukoku-tan", "Bleach: Sennen Kessen-hen - Ketsubetsu-tan", "Bleach: Sennen Kessen-hen - Soukatsu-tan", "Bleach: Thousand-Year Blood War"] },
+    // Dr. STONE Science Future (TMDB S4). The base show's 2019 first-air year is
+    // far from the 2025/2026 sequel year, so the fuzzy match was rejected; pin it
+    // and let the "Science Future" season-name mapping select TMDB S4.
+    { tmdb: 86031, names: ["Dr. Stone: Science Future", "Dr. STONE: SCIENCE FUTURE", "Dr. STONE Science Future", "Dr.Stone Science Future", "Dr. STONE 4th Season"] },
+    // Daikenja Riddle no Jikan Gyakkou — TMDB English title is too different for
+    // the fuzzy search ("The Regression of Great Sage Riddle").
+    { tmdb: 313395, names: ["Daikenja Riddle no Jikan Gyakkou", "Daikenja no Jikan Gyakkou", "The Regression of Great Sage Riddle", "大賢者リドルの時間逆行"] },
+    { tmdb: 290019, names: ["Class de 2-banme ni Kawaii Onnanoko to Tomodachi ni Natta", "I Made Friends with the Second Prettiest Girl in My Class", "I Became Friends with the Second Cutest Girl in the Class"] },
+    { tmdb: 301944, names: ["Marriagetoxin", "Marriage Toxin"] },
+    { tmdb: 300126, names: ["Liar Game"] },
+    { tmdb: 196285, names: ["Isekai Nonbiri Nouka 2", "Isekai Nonbiri Nouka", "Farming Life in Another World"] },
+    { tmdb: 65942,  names: ["Re:Zero kara Hajimeru Isekai Seikatsu 4th Season", "Re:Zero kara Hajimeru Isekai Seikatsu", "Re:ZERO -Starting Life in Another World-"] },
+    { tmdb: 283428, names: ["Koori no Jouheki", "Koori no Jyouheki", "The Ramparts of Ice"] },
+    { tmdb: 300131, names: ["Kill Ao", "Kill Blue"] },
+    { tmdb: 273467, names: ["Himekishi wa Barbaroi no Yome", "Hime Kishi wa Barbaroi no Yome", "The Warrior Princess and the Barbaric King"] },
+    { tmdb: 283905, names: ["Kamiina Botan, Yoeru Sugata wa Yuri no Hana", "Botan Kamiina Fully Blossoms When Drunk"] },
+    { tmdb: 304820, names: ["Nigashita Sakana wa Ookikatta ga Tsuriageta Sakana ga Ookisugita Ken", "Always a Catch!"] },
+    { tmdb: 205961, names: ["Aru Asa Dummy Head Mic ni Natteita Ore-kun no Jinsei", "My Life After I Became a Dummy Head Mic One Morning"] },
+    { tmdb: 96316,  names: ["Kanojo, Okarishimasu 5th Season", "Kanojo, Okarishimasu", "Kanojo Okarishimasu", "Rent-a-Girlfriend"] },
+    // Original Bleach (2004, 366 eps) — fuzzy search may drift to wrong entries;
+    // pin to the same TMDB show (#30984) that already carries seasons 1-16 plus TYBW.
+    // Multi-season stills logic then maps global episode numbers across all TMDB seasons.
+    { tmdb: 30984, names: ["Bleach"] },
+    // Honzuki no Gekokujou Part 3 (Ryoushu no Youjo) — TMDB stores it as Season 2
+    // "Adopted Daughter of an Archduke" under the main Ascendance of a Bookworm
+    // entry (#91768). The 2026 sequel year is far from the 2019 base, so the fuzzy
+    // match was rejected and every episode showed "Preview pending". Pin it; the
+    // pickTmdbSeason special-case maps it to the 2026 Season 2 stills.
+    { tmdb: 91768, names: [
+      "Honzuki no Gekokujou: Ryoushu no Youjo",
+      "Honzuki no Gekokujou Ryoushu no Youjo",
+      "Honzuki no Gekokujou: Shisho ni Naru Tame ni wa Shudan wo Erandeiraremasen - Ryoushu no Youjo",
+      "Ascendance of a Bookworm: Adopted Daughter of an Archduke",
+      "Ascendance of a Bookworm Part 3"
+    ] },
+    // NARUTO: Shippuuden — TMDB #31910 "Naruto Shippūden" (2007, 20 seasons, 500 eps).
+    // Without a pin the fuzzy search sometimes attaches the wrong Naruto entry.
+    // (Was wrongly pinned to #46261, which is "Fairy Tail" (2009) — that forced
+    //  Naruto Shippuden to display Fairy Tail's poster/backdrop/stills.)
+    { tmdb: 31910, names: ["NARUTO: Shippuuden", "Naruto: Shippuuden", "Naruto Shippuden", "Naruto Shippuuden", "Naruto: Shippuden"] },
+    // [Oshi no Ko] 2nd Season — brackets confuse the TMDB fuzzy search; pin to the
+    // main entry (#203737) whose Season 2 carries 2024 episode stills.
+    // (Was wrongly pinned to #130392, which is "The D'Amelio Show".)
+    { tmdb: 203737, names: ["[Oshi no Ko] 2nd Season", "Oshi no Ko 2nd Season", "[Oshi no Ko] Season 2", "Oshi no Ko Season 2", "[Oshi no Ko]", "Oshi no Ko"] },
+    // Tsue to Tsurugi no Wistoria — TMDB #245842 carries both S1 (2024) and S2 (2026).
+    // The romaji title is long and the fuzzy search sometimes rejects it; pin so
+    // pickTmdbSeason() can correctly map "2nd Season" to TMDB Season 2 stills.
+    { tmdb: 245842, names: ["Tsue to Tsurugi no Wistoria", "Wistoria: Wand and Sword", "Wistoria Wand and Sword", "Tsue to Tsurugi no Wistoria 2nd Season", "Wistoria: Wand and Sword Season 2"] },
+    // Otonari no Tenshi-sama S2 — TMDB stores the 2026 sequel as Season 2 under
+    // the English parent entry (#154743). Pin the romaji "2" catalog title so
+    // the season-aware still loader uses those actual episode images.
+    { tmdb: 154743, names: [
+      "Otonari no Tenshi-sama ni Itsunomanika Dame Ningen ni Sareteita Ken",
+      "Otonari no Tenshi-sama ni Itsunomanika Dame Ningen ni Sareteita Ken 2",
+      "Otonari no Tenshi-sama ni Itsunomanika Dame Ningen ni Sareteita Ken 2nd Season",
+      "The Angel Next Door Spoils Me Rotten",
+      "The Angel Next Door Spoils Me Rotten2",
+      "The Angel Next Door Spoils Me Rotten Season 2"
+    ] }
+  ];
+
+  // Compact key for override matching: lowercase, NFD-decompose, then drop every
+  // non a-z/0-9 character (so accents, punctuation and spaces all collapse). The
+  // curated names are all romaji/English, so dropping CJK is harmless. Independent
+  // of norm()'s translation rules; matches raw titles across spelling/spacing
+  // variants ("Re:Zero..." === "Re Zero...", "Marriagetoxin" === "Marriage Toxin").
+  function overrideKey(value) {
+    return String(value || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[^a-z0-9]+/g, "");
+  }
+
+  const _overrideIndex = (() => {
+    const map = new Map();
+    for (const entry of TMDB_ID_OVERRIDES) {
+      for (const name of entry.names) {
+        const key = overrideKey(name);
+        if (key) map.set(key, entry.tmdb);
+      }
+    }
+    return map;
+  })();
+
+  // Returns a pinned TMDB id when any of the anime's titles is in the curated
+  // list, otherwise null (and the normal fuzzy search runs).
+  function lookupTmdbOverride(anime) {
+    if (!anime) return null;
+    const titleObj = (anime.title && typeof anime.title === "object") ? anime.title : {};
+    const titles = [
+      typeof anime.title === "string" ? anime.title : "",
+      anime.englishTitle, anime.romajiTitle, anime.nativeTitle,
+      titleObj.english, titleObj.romaji, titleObj.native,
+      ...(Array.isArray(anime.synonyms) ? anime.synonyms : [])
+    ];
+    for (const t of titles) {
+      const key = overrideKey(t);
+      if (key && _overrideIndex.has(key)) return _overrideIndex.get(key);
+    }
+    return null;
+  }
+
+  // Fetch show-level art + season list + episode stills for a known TMDB id and
+  // assemble the resolved-match record. Shared by the fuzzy-match path and the
+  // curated-override path. `searchResult` supplies fallback poster/backdrop paths
+  // from a search hit for when the /tv detail fetch fails.
+  async function buildResolvedFromTmdbId(anime, tmdbId, confidence, searchResult = {}) {
+    if (/movie|film/i.test(String(anime.format || anime.type || searchResult.media_type || ""))) {
+      return { tmdbId, confidence, showPoster: tmdbPosterUrl(searchResult.poster_path), showBackdrop: tmdbBackdropUrl(searchResult.backdrop_path), episodeStills: {}, episodesByNum: {}, seasons: [] };
+    }
+    const idLabel = anime.anilistId || anime.id;
+    let show = null;
+    try {
+      const resp = await fetchWithTimeout(`/api/tmdb/tv?id=${encodeURIComponent(tmdbId)}`, {}, 12000);
+      const payload = resp.ok ? await resp.json() : null;
+      show = payload?.show || null;
+    } catch { /* keep going with search-level paths below */ }
+
+    const showPoster = tmdbPosterUrl(show?.poster_path || searchResult.poster_path);
+    const showBackdrop = tmdbBackdropUrl(show?.backdrop_path || searchResult.backdrop_path);
+    const realSeasons = (show?.seasons || [])
+      .filter((s) => Number(s.season_number) > 0 && Number(s.episode_count) > 0)
+      .sort((a, b) => Number(a.season_number) - Number(b.season_number));
+
+    // Season-specific art (poster + episode stills) when we can map it.
+    let seasonPoster = "";
+    const episodeStills = {};
+    const episodesByNum = {};
+    const fetchedSeasonPayloads = new Map();
+    if (show) {
+      const { season, reason } = pickTmdbSeason(anime, show);
+      if (season) {
+        seasonPoster = tmdbPosterUrl(season.poster_path);
+        debug(`season mapping for ${idLabel}: TMDB S${season.season_number} (${reason})`);
+        try {
+          const resp = await fetchWithTimeout(
+            `/api/tmdb/season?id=${encodeURIComponent(tmdbId)}&season=${encodeURIComponent(season.season_number)}`,
+            {}, 12000
+          );
+          const payload = resp.ok ? await resp.json() : null;
+          if (payload?.season) fetchedSeasonPayloads.set(Number(season.season_number), payload);
+          const tmdbEpisodes = payload?.season?.episodes || [];
+
+          // Check if we need to offset episodes (e.g. all seasons grouped under Season 1 on TMDB)
+          let episodeOffset = 0;
+          const animeYear = Number(anime.seasonYear || anime.year || 0);
+
+          if (tmdbEpisodes.length > 12 && animeYear) {
+            let matchingEp = tmdbEpisodes.find(ep => yearOf(ep.air_date) === animeYear);
+            if (!matchingEp && animeYear) {
+              matchingEp = tmdbEpisodes.find(ep => {
+                const epYear = yearOf(ep.air_date);
+                return epYear && Math.abs(epYear - animeYear) <= 1;
+              });
+            }
+            if (matchingEp) {
+              episodeOffset = matchingEp.episode_number - 1;
+              debug(`Grouped season detected. Mapped AniList Season to TMDB S${season.season_number} starting at episode ${matchingEp.episode_number} (offset: ${episodeOffset})`);
+            }
+          }
+
+          for (const ep of tmdbEpisodes) {
+            const still = tmdbStillUrl(ep.still_path);
+            let targetEpisodeNum = ep.episode_number;
+            if (episodeOffset > 0) {
+              targetEpisodeNum = ep.episode_number - episodeOffset;
+            }
+            if (targetEpisodeNum > 0) {
+              if (still) episodeStills[targetEpisodeNum] = still;
+              episodesByNum[targetEpisodeNum] = {
+                episode: targetEpisodeNum,
+                title: ep.name || "",
+                description: ep.overview || "",
+                aired: ep.air_date || "",
+                thumbnail: still
+              };
+            }
+          }
+          debug(`fetched ${Object.keys(episodeStills).length} episode stills for ${idLabel}.`);
+        } catch { /* show-level art still applies */ }
+      } else {
+        debug(`season mapping for ${idLabel}: ${reason}`);
+      }
+    }
+
+    // ── Multi-season stills for long-running shows (Bleach, Naruto Shippuden, etc.)
+    // For shows with >100 episodes split across multiple TMDB seasons, the single-
+    // season fetch above only covers one arc. Here we fetch ALL seasons in parallel
+    // and rebuild the stills map keyed by GLOBAL episode number (cumulative offset
+    // across seasons), so episode 101 maps correctly to S3 ep 38, etc.
+    const totalEps = Math.max(Number(anime.totalEpisodes || anime.episodeCount || 0), Number(anime.latestAiredEp || anime.episode || 0), Number(show?.number_of_episodes || 0));
+    const numberedSequel = typeof SeasonNormalization !== "undefined" && SeasonNormalization.parseTitle(anime.romajiTitle || anime.title || "").seasonNumber > 1;
+    if (show && totalEps > 100 && !numberedSequel && realSeasons.length > 2) {
+      // Wipe local-numbered stills from the single-season pass; rebuild globally.
+      for (const k of Object.keys(episodeStills)) delete episodeStills[k];
+      for (const k of Object.keys(episodesByNum)) delete episodesByNum[k];
+
+      let _globalOffset = 0;
+      // Compute per-season global offsets synchronously (before any await),
+      // then fire all season fetches in parallel.
+      const seasonJobs = realSeasons.map((s) => {
+        const offset = _globalOffset;
+        _globalOffset += Number(s.episode_count || 0);
+        return { s, offset };
+      });
+      const fetchSeasonJob = async ({ s, offset }) => {
+        try {
+          let payload = fetchedSeasonPayloads.get(Number(s.season_number)) || null;
+          if (!payload) {
+            const r = await fetchWithTimeout(
+              `/api/tmdb/season?id=${encodeURIComponent(tmdbId)}&season=${encodeURIComponent(s.season_number)}`,
+              {}, 10000
+            );
+            payload = r.ok ? await r.json() : null;
+          }
+          const episodes = payload?.season?.episodes || [];
+          const numbers = episodes.map(ep => Number(ep.episode_number)).filter(number => number > 0);
+          const alreadyAbsolute = offset > 0 && numbers.length && Math.min(...numbers) > offset;
+          for (const ep of episodes) {
+            const globalNum = Number(ep.episode_number) + (alreadyAbsolute ? 0 : offset);
+            const still = tmdbStillUrl(ep.still_path);
+            if (still && !episodeStills[globalNum]) episodeStills[globalNum] = still;
+            if (!episodesByNum[globalNum]) {
+              episodesByNum[globalNum] = {
+                episode: globalNum, title: ep.name || "",
+                description: ep.overview || "", aired: ep.air_date || "", thumbnail: still
+              };
+            }
+          }
+        } catch { /* season unavailable — skip */ }
+      };
+      for (let i = 0; i < seasonJobs.length; i += 4) {
+        await Promise.allSettled(seasonJobs.slice(i, i + 4).map(fetchSeasonJob));
+      }
+      debug(`multi-season: ${Object.keys(episodeStills).length} global stills for ${idLabel} (${realSeasons.length} seasons)`);
+    }
+
+    return {
+      tmdbId,
+      confidence,
+      showPoster,
+      showBackdrop,
+      seasonPoster,
+      episodeStills,
+      episodesByNum,
+      seasons: show?.seasons || []
+    };
+  }
+
+  // Resolve + attach TMDB artwork to an anime object. Safe to call repeatedly;
+  // it no-ops once resolved and dedupes concurrent calls.
+  async function hydrateTmdbImages(anime) {
+    if (!anime || anime._tmdbResolved) return anime;
+    const anilistId = anime.anilistId || anime.id;
+    if (!anilistId) return anime;
+    if (_tmdbConfigured === false) return anime; // server already told us there's no key
+    const flightKey = String(anilistId);
+    if (_inFlight.has(flightKey)) return _inFlight.get(flightKey);
+
+    const request = Promise.resolve().then(async () => {
+      try {
+      // Curated override: pin the correct TMDB id for shows the fuzzy search
+      // can't match by title. Checked alongside the cache so the pin always wins,
+      // but a cache entry that already agrees with the pin is reused.
+      const overrideId = lookupTmdbOverride(anime);
+      // The build-time artwork audit resolves this id against the exact
+      // AniList/MAL identity. Reusing it avoids a second fuzzy title search and
+      // is essential for Japanese-only relation rows whose TMDB series uses an
+      // unrelated English name.
+      const bakedTmdbId = Number(anime.tmdbId || 0) || null;
+      const trustedTmdbId = overrideId || bakedTmdbId;
+
+      // Cached winning match? (reuse only when it doesn't contradict the override)
+      const cached = readMatchCache(anilistId);
+      // A cached match with NO episode stills is stale for any TV show: at resolve
+      // time the /api/tmdb/season fetch failed/timed out — common when a
+      // cache-version bump re-resolves everything at once and overwhelms TMDB, and
+      // for airing shows TMDB also hadn't published the stills yet. Serving that
+      // 0-stills entry freezes every episode on "Preview pending" for the full 24h
+      // TTL (hit Shingeki Final Season Part 2, Ookii Onnanoko, Honzuki, etc.).
+      // Treat it as a miss so we re-resolve and pick up the stills. BOUNDED:
+      // _tmdbResolved makes this at most once per session per show, and the TMDB
+      // endpoints are server-cached. Movies have no episode stills by nature, so
+      // skip them (no pointless re-fetch churn).
+      const isMovie = String(anime.format || "").toUpperCase() === "MOVIE";
+      const cachedStillCount = cached && cached.episodeStills ? Object.keys(cached.episodeStills).length : 0;
+      const expectedEpisodes = (cached?.seasons || []).filter(season => Number(season.season_number) > 0)
+        .reduce((sum, season) => sum + Number(season.episode_count || 0), 0);
+      const continuous = typeof SeasonNormalization !== "undefined" &&
+        SeasonNormalization.parseTitle(anime.romajiTitle || anime.title || "").seasonNumber <= 1;
+      const incompleteArcs = continuous && expectedEpisodes > 100 &&
+        Object.keys(cached?.episodesByNum || {}).length < expectedEpisodes;
+      const sourceEpisodeIds = Array.isArray(anime.sourceEpisodeIds)
+        ? anime.sourceEpisodeIds
+          .map(Number)
+          .filter((number) => Number.isFinite(number) && number >= 0)
+          .map((number) => number === 0 ? 1 : number)
+        : [];
+      const newestPlayableEpisode = Math.max(
+        0,
+        Number(anime.sourceEpisodeCount) || 0,
+        ...sourceEpisodeIds
+      );
+      const newestCachedMetadata = newestPlayableEpisode
+        ? cached?.episodesByNum?.[newestPlayableEpisode]
+        : null;
+      const missingNewestMetadata = newestPlayableEpisode > 0 && !(
+        newestCachedMetadata?.title
+        || newestCachedMetadata?.thumbnail
+        || cached?.episodeStills?.[newestPlayableEpisode]
+      );
+      const cachedStale = cached && !isMovie && (
+        cachedStillCount === 0
+        || incompleteArcs
+        || missingNewestMetadata
+      );
+      if (cached && !cachedStale && (!trustedTmdbId || Number(cached.tmdbId) === Number(trustedTmdbId))) {
+        applyResolvedMatch(anime, cached);
+        anime._tmdbResolved = true;
+        debug(`cache hit for ${anilistId} → TMDB ${cached.tmdbId} (confidence ${cached.confidence})`);
+        return anime;
+      }
+
+      if (trustedTmdbId) {
+        debug(`${overrideId ? "override" : "build map"}: pinning TMDB #${trustedTmdbId} for ${anilistId} ("${anime.romajiTitle || anime.title || ""}")`);
+        const resolved = await buildResolvedFromTmdbId(anime, trustedTmdbId, 100);
+        applyResolvedMatch(anime, resolved);
+        anime._tmdbResolved = true;
+        // Don't cache a transient failure (no art came back) — retry next open.
+        if (resolved.showBackdrop || resolved.showPoster || Object.keys(resolved.episodeStills).length) {
+          writeMatchCache(anilistId, resolved);
+        }
+        return anime;
+      }
+
+      // TMDB keeps films in a separate index, and /search/tv simply returns nothing
+      // for them. Without this a franchise "Movies" entry never matched, fell back
+      // to an AniList banner and rendered a 1900x534 strip where every other season
+      // showed a 1920x1080 backdrop.
+      const mediaType = /movie|film/i.test(String(anime.format || anime.type || "")) ? "&type=movie" : "";
+
+      // Search with the strongest titles first.
+      const rawTitles = [
+        typeof anime.title === "string" ? anime.title : "",
+        anime.englishTitle || anime.title?.english,
+        anime.romajiTitle || anime.title?.romaji,
+        anime.nativeTitle || anime.title?.native,
+        ...(Array.isArray(anime.synonyms) ? anime.synonyms.slice(0, 2) : [])
+      ].map((t) => String(t || "").trim()).filter(Boolean);
+
+      const searchTitles = [];
+      const seenSearchTitles = new Set();
+      for (const t of rawTitles) {
+        const normRaw = norm(t);
+        if (normRaw && !seenSearchTitles.has(normRaw)) {
+          seenSearchTitles.add(normRaw);
+          // If the normalized title is different from the lowercase original title,
+          // it means a title translation mapping rule was applied. Push it so we search TMDB with it first!
+          const cleanT = String(t).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+          if (normRaw !== cleanT) {
+            searchTitles.push(normRaw);
+          }
+          searchTitles.push(t);
+        }
+        const stripped = stripSequelWords(t);
+        if (stripped && stripped.length > 2 && !seenSearchTitles.has(stripped)) {
+          seenSearchTitles.add(stripped);
+          searchTitles.push(stripped);
+        }
+      }
+      const seenTitles = new Set();
+      const year = String(anime.seasonYear || anime.year || "");
+      debug(`search titles for ${anilistId}:`, searchTitles, "year:", year || "—");
+
+      const candidates = [];
+      const seenIds = new Set();
+      for (const title of searchTitles) {
+        const key = norm(title);
+        if (!key || seenTitles.has(key)) continue;
+        seenTitles.add(key);
+        let payload;
+        try {
+          let resp = await fetchWithTimeout(
+            `/api/tmdb/search?q=${encodeURIComponent(title)}${mediaType}${year ? `&year=${encodeURIComponent(year)}` : ""}`,
+            {}, 12000
+          );
+          payload = resp.ok ? await resp.json() : null;
+          if ((!payload || !payload.results || !payload.results.length) && year) {
+            resp = await fetchWithTimeout(
+              `/api/tmdb/search?q=${encodeURIComponent(title)}${mediaType}`,
+              {}, 12000
+            );
+            payload = resp.ok ? await resp.json() : null;
+          }
+          // A film that found nothing in the TV index is worth one more look in the
+          // movie index, and vice versa - AniList and TMDB disagree about whether
+          // some entries are films or short series.
+          if ((!payload || !payload.results || !payload.results.length) && mediaType) {
+            resp = await fetchWithTimeout(
+              `/api/tmdb/search?q=${encodeURIComponent(title)}`,
+              {}, 12000
+            );
+            payload = resp.ok ? await resp.json() : null;
+          }
+        } catch { payload = null; }
+        if (payload && payload.configured === false) {
+          _tmdbConfigured = false;
+          debug("TMDB not configured on server — using AniList artwork only.");
+          return anime;
+        }
+        _tmdbConfigured = true;
+        for (const r of (payload?.results || [])) {
+          if (seenIds.has(r.id)) continue;
+          seenIds.add(r.id);
+          candidates.push(r);
+        }
+        // A confident exact-title hit early lets us stop searching synonyms.
+        if (candidates.some((c) => titleScore(anime, c) >= 95)) break;
+      }
+
+      if (!candidates.length) {
+        debug(`no TMDB candidates for ${anilistId} — AniList fallback.`);
+        anime._tmdbResolved = true;
+        return anime;
+      }
+
+      const scored = candidates
+        .map((c) => ({ c, ...scoreCandidate(anime, c) }))
+        .sort((a, b) => b.confidence - a.confidence);
+      debug(`candidates for ${anilistId}:`, scored.map((s) => `${s.c.name} (#${s.c.id}) → ${s.confidence} [${s.reason}]`));
+
+      const best = scored[0];
+      if (!best || best.confidence < CONFIDENCE_THRESHOLD || best.tScore < 72) {
+        debug(`rejected best match for ${anilistId}: ${best?.c?.name} confidence ${best?.confidence} < ${CONFIDENCE_THRESHOLD}. AniList fallback.`);
+        anime._tmdbResolved = true;
+        return anime;
+      }
+      debug(`accepted TMDB #${best.c.id} "${best.c.name}" for ${anilistId} (confidence ${best.confidence}; ${best.reason})`);
+
+      const resolved = await buildResolvedFromTmdbId(anime, best.c.id, best.confidence, best.c);
+      applyResolvedMatch(anime, resolved);
+      anime._tmdbResolved = true;
+      writeMatchCache(anilistId, resolved);
+      return anime;
+      } finally {
+        _inFlight.delete(flightKey);
+      }
+    });
+    _inFlight.set(flightKey, request);
+    return request;
+  }
+
+  // ── Per-surface resolution (the documented priority chains) ─────────────────
+  function usesContinuousGlobalEpisodeMap(anime) {
+    if (!anime || anime.tmdbFranchiseFallback) return false;
+    const providerRuns = [
+      Number(anime.totalEpisodes || 0),
+      Number(anime.episodeCount || 0),
+      Number(anime.latestAiredEp || anime.episode || 0),
+      Array.isArray(anime.episodes) ? anime.episodes.length : 0,
+      ...(Array.isArray(anime.seasons)
+        ? anime.seasons.map((season) => Array.isArray(season?.episodes) ? season.episodes.length : 0)
+        : [])
+    ];
+    const longestProviderRun = Math.max(0, ...providerRuns);
+    const tmdbEpisodeCount = (anime.tmdbSeasons || [])
+      .filter((season) => Number(season.season_number) > 0)
+      .reduce((total, season) => total + Number(season.episode_count || 0), 0);
+    const populatedProviderSeasons = (anime.seasons || [])
+      .filter((season) => Array.isArray(season?.episodes) && season.episodes.length);
+    const parsedSeason = typeof SeasonNormalization !== "undefined"
+      ? Number(SeasonNormalization.parseTitle(anime.romajiTitle || anime.title || "").seasonNumber || 1)
+      : 1;
+    return longestProviderRun > 100
+      && tmdbEpisodeCount > 100
+      && populatedProviderSeasons.length <= 1
+      && parsedSeason <= 1;
+  }
+
+  function requiresSeasonScopedEpisodeArt(anime, appSeasonNumber) {
+    if (!anime || !Number(appSeasonNumber || 0)) return false;
+    // AnimeAV1 keeps Naruto, Shippuden, One Piece and similar long shows as one
+    // continuous provider list even though TMDB divides the same run into many
+    // physical seasons. Their flattened TMDB map is intentional and must remain
+    // available past the first physical season.
+    if (usesContinuousGlobalEpisodeMap(anime)) return false;
+    return Boolean(
+      anime.isFranchiseEntry
+      || anime.canonicalSeasonNumber
+      || anime.canonicalSeasonPart
+      || (Array.isArray(anime.seasons) && anime.seasons.length > 1)
+    );
+  }
+
+  function getEpisodeStill(anime, episode, appSeasonNumber) {
+    if (!anime) return "";
+    const num = Number(episode?.episode || episode?.episodeNumber || 0);
+    if (!num) return "";
+    // Season-aware first: multi-season shows keyed by a single flat episode number
+    // would make every season reuse Season 1's stills (ep 1 collides with ep 1).
+    // When a per-season map has been loaded for this app season it is authoritative
+    // — return its still or "" (never bleed in another season's art).
+    const sNum = Number(appSeasonNumber || 0);
+    if (sNum && anime.tmdbStillsBySeason && anime.tmdbStillsBySeason[sNum]) {
+      const scoped = anime.tmdbStillsBySeason[sNum];
+      if (scoped[num]) return scoped[num];
+      if (requiresSeasonScopedEpisodeArt(anime, sNum)) return "";
+      const localMax = Math.max(0, ...Object.keys(scoped).map((key) => Number(key) || 0));
+      if (num <= localMax) return "";
+    }
+    if (requiresSeasonScopedEpisodeArt(anime, sNum)) return "";
+    if (!anime.tmdbEpisodeStills) return "";
+    return anime.tmdbEpisodeStills[num] || "";
+  }
+
+  function getNearestEpisodeStill(anime, episode, appSeasonNumber) {
+    if (!anime) return "";
+    const num = Number(episode?.episode || episode?.episodeNumber || 0);
+    if (!num) return "";
+    const sNum = Number(appSeasonNumber || 0);
+    const scoped = sNum && anime.tmdbStillsBySeason && anime.tmdbStillsBySeason[sNum]
+      ? anime.tmdbStillsBySeason[sNum]
+      : null;
+    const pool = scoped || (requiresSeasonScopedEpisodeArt(anime, sNum) ? {} : (anime.tmdbEpisodeStills || {}));
+    const numbers = Object.keys(pool)
+      .map((key) => Number(key) || 0)
+      .filter((key) => key > 0 && pool[key])
+      .sort((a, b) => a - b);
+    if (!numbers.length) return "";
+
+    const previous = [...numbers].reverse().find((key) => key < num);
+    const next = numbers.find((key) => key > num);
+    const previousDistance = previous ? num - previous : Infinity;
+    const nextDistance = next ? next - num : Infinity;
+
+    // Borrow ONLY for a genuine internal single gap — a real still exists on BOTH
+    // sides nearby — which is a true TMDB omission for one episode. A TRAILING run
+    // of just-aired episodes (the newest ones) has a previous still but NO next
+    // still, so borrowing there would repeat the last image across every new
+    // episode; keep the branded placeholder for those instead (accurate, no
+    // repeat) until TMDB publishes their real stills.
+    if (previous && next && previousDistance <= 2 && nextDistance <= 2) {
+      return pool[previous] || pool[next] || "";
+    }
+    return "";
+  }
+
+  function firstSeasonStillFromMap(stills) {
+    if (!stills || typeof stills !== "object") return "";
+    const numbers = Object.keys(stills)
+      .map((key) => Number(key) || 0)
+      .filter((key) => key > 0 && stills[key])
+      .sort((a, b) => a - b);
+    if (!numbers.length) return "";
+    const preferred = [1, 2, 3, Math.ceil(numbers[numbers.length - 1] / 2)];
+    for (const key of preferred) {
+      if (stills[key]) return stills[key];
+    }
+    return stills[numbers[0]] || "";
+  }
+
+  function getSeasonBackdrop(anime, appSeasonNumber, appSeasonMeta) {
+    if (!anime) return "";
+    const sNum = Number(appSeasonNumber || appSeasonMeta?.season || 0);
+    return firstValidImage([
+      appSeasonMeta?.tmdbBackdrop,
+      appSeasonMeta?.highQualityBackground,
+      appSeasonMeta?.banner,
+      appSeasonMeta?.backdrop,
+      sNum && anime.tmdbSeasonBackdropsBySeason ? anime.tmdbSeasonBackdropsBySeason[sNum] : "",
+      sNum && anime.tmdbSeasonPostersBySeason ? anime.tmdbSeasonPostersBySeason[sNum] : ""
+    ]);
+  }
+
+  function resolveEpisodeThumbnail(episode, anime, tmdbData) {
+    anime = anime || {};
+    tmdbData = tmdbData || {};
+    const url = firstValidImage([
+      tmdbData.episodeStill !== undefined ? tmdbData.episodeStill : getEpisodeStill(anime, episode),
+      episode?.image, episode?.thumbnail, episode?.still, episode?.snapshot
+    ]);
+    if (url) return url;
+    // A MOVIE has a single "episode" that IS the whole film — TMDB stores no
+    // per-episode stills for it, so it would otherwise sit on "Preview pending"
+    // forever (e.g. Koe no Katachi). Use the film's own LANDSCAPE art as that
+    // episode's thumbnail: the TMDB backdrop, then the AniList banner, only
+    // falling back to a portrait poster as a last resort (the thumb slot is 16:9,
+    // so a portrait would crop). Accurate and not a misleading reuse — there is
+    // only one episode. Guarded to movies so multi-episode shows are untouched.
+    const isMovie = String(anime.format || "").toUpperCase() === "MOVIE";
+    if (isMovie) {
+      return firstValidImage([
+        tmdbData.showBackdrop || anime.tmdbBackdrop,
+        anime.bannerImage || anime.banner,
+        tmdbData.showPoster || anime.tmdbPoster,
+        anime.coverImageLarge
+      ]) || "";
+    }
+    return "";
+  }
+
+  function resolvePrePlayerBackground(episode, anime, tmdbData) {
+    anime = anime || {};
+    tmdbData = tmdbData || {};
+    return firstValidImage([
+      tmdbData.showBackdrop || anime.tmdbBackdrop,
+      anime.highQualityBackground,
+      anime.bannerImage || anime.banner,
+      anime.backdrop,
+      anime.heroImage,
+      anime.wideImage,
+      anime.landscapeImage,
+      tmdbData.seasonPoster || anime.tmdbSeasonPoster,
+      anime.tmdbPoster,
+      anime.coverImageLarge,
+      anime.coverImage || anime.image
+    ]) || "";
+  }
+
+  function resolvePrePlayerPoster(episode, anime, tmdbData) {
+    anime = anime || {};
+    tmdbData = tmdbData || {};
+    return firstValidImage([
+      tmdbData.seasonPoster || anime.tmdbSeasonPoster,
+      tmdbData.showPoster || anime.tmdbPoster,
+      anime.coverImageLarge,
+      anime.coverImage || anime.image
+    ]) || "";
+  }
+
+  function findTmdbSeasonForEpisode(anime, episodeNumber) {
+    const seasons = anime.tmdbSeasons || [];
+    if (!seasons.length) return null;
+    const numberedSeasons = seasons
+      .filter((s) => Number(s.season_number) > 0)
+      .sort((a, b) => a.season_number - b.season_number);
+    let accumulated = 0;
+    for (const s of numberedSeasons) {
+      const count = Number(s.episode_count || 0);
+      if (episodeNumber > accumulated && episodeNumber <= accumulated + count) {
+        return {
+          seasonNumber: s.season_number,
+          episodeOffset: accumulated
+        };
+      }
+      accumulated += count;
+    }
+    return null;
+  }
+
+  const _lazyFetching = new Set();
+  async function lazyFetchEpisodeStill(anime, episodeNumber) {
+    if (!anime || !anime.tmdbId || !episodeNumber) return;
+    const mapping = findTmdbSeasonForEpisode(anime, episodeNumber);
+    if (!mapping) return;
+    if (anime._tmdbSeasonsLoaded && anime._tmdbSeasonsLoaded.has(mapping.seasonNumber)) return;
+    const key = `${anime.anilistId || anime.id}:${mapping.seasonNumber}`;
+    if (_lazyFetching.has(key)) return;
+    _lazyFetching.add(key);
+    try {
+      debug(`Lazy fetching TMDB season S${mapping.seasonNumber} for show ${anime.anilistId || anime.id} (contains absolute episode ${episodeNumber})...`);
+      const url = `/api/tmdb/season?id=${encodeURIComponent(anime.tmdbId)}&season=${encodeURIComponent(mapping.seasonNumber)}`;
+      const resp = typeof fetchWithTimeout === "function"
+        ? await fetchWithTimeout(url, {}, 12000)
+        : await fetch(url);
+      const payload = resp.ok ? await resp.json() : null;
+      const eps = payload?.season?.episodes || [];
+      let changed = false;
+      const maxEpNum = eps.length ? Math.max(...eps.map(e => Number(e.episode_number || 0))) : 0;
+      const isAbsoluteNumbering = maxEpNum > eps.length;
+      for (const ep of eps) {
+        const still = tmdbStillUrl(ep.still_path);
+        const absoluteEpNum = isAbsoluteNumbering ? Number(ep.episode_number) : (mapping.episodeOffset + Number(ep.episode_number));
+        if (still) {
+          if (!anime.tmdbEpisodeStills) anime.tmdbEpisodeStills = {};
+          anime.tmdbEpisodeStills[absoluteEpNum] = still;
+          changed = true;
+        }
+        if (!anime.tmdbEpisodesByNum) anime.tmdbEpisodesByNum = {};
+        anime.tmdbEpisodesByNum[absoluteEpNum] = {
+          episode: absoluteEpNum,
+          title: ep.name || "",
+          description: ep.overview || "",
+          aired: ep.air_date || "",
+          thumbnail: still
+        };
+      }
+      if (changed) {
+        debug(`Lazy fetched S${mapping.seasonNumber} for show ${anime.anilistId || anime.id}. Triggering repaint.`);
+        if (typeof render === "function") render();
+        if (typeof renderEpisodeList === "function" && typeof state !== "undefined" && state.activeShow?.id === anime.id) {
+          renderEpisodeList(state.activeShow);
+        }
+      }
+    } catch (err) {
+      debug(`Lazy fetch failed: ${err.message}`);
+    } finally {
+      if (!anime._tmdbSeasonsLoaded) anime._tmdbSeasonsLoaded = new Set();
+      anime._tmdbSeasonsLoaded.add(mapping.seasonNumber);
+      _lazyFetching.delete(key);
+    }
+  }
+
+  // ── Season-aware episode stills (multi-season shows) ────────────────────────
+  // A show that is presented as ONE catalog entry with several seasons (each
+  // numbered 1..N) cannot use the flat tmdbEpisodeStills map: Season 2 episode 1
+  // would collide with Season 1 episode 1. For these we resolve the TMDB season
+  // that matches the *active* app season and store its stills under that season
+  // number, rebased to local 1..N so they line up with the displayed list.
+  function mapAppSeasonToTmdb(anime, appSeasonNumber, appSeasonMeta) {
+    const seasons = anime.tmdbSeasons || [];
+    if (!seasons.length) return null;
+    const meta = appSeasonMeta || {};
+    const metaTitle = String(meta.sourceTitle || meta.title || "").trim();
+    const genericMetaTitle = /^(?:episodes?|season\s*\d+|part\s*\d+)$/i.test(metaTitle);
+    const pseudo = {
+      title: genericMetaTitle || !metaTitle ? anime.title : metaTitle,
+      romajiTitle: anime.romajiTitle,
+      englishTitle: anime.englishTitle,
+      nativeTitle: anime.nativeTitle,
+      synonyms: anime.synonyms,
+      // Provider pages for related AniList entries restart at local Season 1,
+      // but appSeasonNumber has already been canonicalized from the relation
+      // chain. Keep that identity here. Dropping it made titles whose sequel
+      // marker is embedded in the name ("Mushoku Tensei III: ...") fall back to
+      // TMDB Season 1 before the year matcher could run.
+      seasonNumber: appSeasonNumber,
+      seasonYear: meta.year || meta.startYear || (meta.startDate && meta.startDate.year) ||
+                  anime.seasonYear || anime.year
+    };
+    const { season } = pickTmdbSeason(pseudo, { seasons });
+    return season ? Number(season.season_number) : null;
+  }
+
+  const _seasonStillsFetching = new Map();
+  // _seasonStillsTried is a Set while the page is running, but the anime object
+  // is cached through JSON - and JSON has no Set. A Set serialises to {} and
+  // comes back a plain object with no .has and no .add, so the very first
+  // .has(sNum) threw "is not a function" and took the whole episode panel down
+  // with it. Only shows restored from cache were affected, which is why it
+  // looked intermittent.
+  //
+  // Normalising on read means no caller has to care what survived the trip.
+  // An array is the one restored shape that still carries real values, so it is
+  // rehydrated; {} (a serialised Set) and null/undefined carry none and start
+  // empty. The repaired Set is written back so the coercion happens once.
+  function seasonStillsTried(anime) {
+    const current = anime._seasonStillsTried;
+    if (current instanceof Set) return current;
+    const restored = Array.isArray(current) ? new Set(current) : new Set();
+    anime._seasonStillsTried = restored;
+    return restored;
+  }
+
+  function ensureSeasonStills(anime, appSeasonNumber, appSeasonMeta) {
+    if (!anime || !anime.tmdbId) return Promise.resolve(anime);
+    const sNum = Number(appSeasonNumber || 0);
+    if (!sNum) return Promise.resolve(anime);
+    const triedSeasons = seasonStillsTried(anime);
+    const knownCount = knownSeasonEpisodeCount(anime, appSeasonMeta);
+    const existingCoverage = Number(anime._tmdbSeasonArtCoverage?.[sNum]) || Math.min(
+      Object.keys(anime.tmdbEpisodesBySeasonNum?.[sNum] || {}).length,
+      Object.keys(anime.tmdbStillsBySeason?.[sNum] || {}).length
+    );
+    if (anime.tmdbStillsBySeason && Object.prototype.hasOwnProperty.call(anime.tmdbStillsBySeason, sNum)
+        && existingCoverage >= knownCount) {
+      return Promise.resolve(anime);
+    }
+
+    const tmdbSeasonNumber = mapAppSeasonToTmdb(anime, sNum, appSeasonMeta);
+    if (!tmdbSeasonNumber) {
+      // The detail route often renders before hydrateTmdbImages has returned the
+      // TMDB season list. That is "not ready", not a failed mapping; keep it
+      // retryable until a real season list makes the mapping authoritative.
+      if (Array.isArray(anime.tmdbSeasons) && anime.tmdbSeasons.length) {
+        triedSeasons.add(sNum);
+      }
+      return Promise.resolve(anime);
+    }
+
+    const cached = readSeasonArtCache(anime, sNum, tmdbSeasonNumber);
+    if (cached) {
+      applySeasonArtwork(anime, sNum, cached);
+      if (seasonArtCoverage(cached) >= knownCount) return Promise.resolve(anime);
+    }
+    if (triedSeasons.has(sNum) &&
+        (Number(anime._tmdbSeasonArtAttemptedCount?.[sNum]) || knownCount) >= knownCount) {
+      return Promise.resolve(anime);
+    }
+
+    const key = `${anime.anilistId || anime.id}:app${sNum}`;
+    if (_seasonStillsFetching.has(key)) return _seasonStillsFetching.get(key);
+    if (!anime._tmdbSeasonArtAttemptedCount) anime._tmdbSeasonArtAttemptedCount = {};
+    anime._tmdbSeasonArtAttemptedCount[sNum] = knownCount;
+
+    const request = (async () => {
+      const requestAnimeId = String(anime.id || "");
+      const requestAniListId = String(anime.anilistId || "");
+      const requestTmdbId = String(anime.tmdbId || "");
+      try {
+        const url = `/api/tmdb/season?id=${encodeURIComponent(anime.tmdbId)}&season=${encodeURIComponent(tmdbSeasonNumber)}`;
+        const resp = typeof fetchWithTimeout === "function"
+          ? await fetchWithTimeout(url, {}, 12000)
+          : await fetch(url);
+        const payload = resp.ok ? await resp.json() : null;
+        const eps = payload?.season?.episodes || [];
+        if (!eps.length) return anime;
+
+        // Some anime parts are separate AniList entries but one continuous TMDB
+        // season (Bleach TYBW is 40 episodes there). Scope that long TMDB season
+        // to the target entry's year and episode count before rebasing it; without
+        // this, every part reused episodes 1..N and showed the wrong title cards.
+        const targetYear = Number(
+          appSeasonMeta?.year || appSeasonMeta?.startYear || appSeasonMeta?.startDate?.year ||
+          anime.seasonYear || anime.year || 0
+        );
+        const expectedCount = knownCount;
+        let scopedEpisodes = eps;
+        if (targetYear && eps.length > Math.max(12, expectedCount || 12)) {
+          // Split cours can air in the same calendar year, so year alone points
+          // both parts at episode 1. Relation normalization already computed the
+          // exact provider offset; use it before the year fallback.
+          const providerOffset = Math.max(0, Number(
+            appSeasonMeta?.providerEpisodeOffset ?? anime.providerEpisodeOffset ?? 0
+          ) || 0);
+          let start = providerOffset > 0 && providerOffset < eps.length ? providerOffset : -1;
+          if (start < 0) start = eps.findIndex((episode) => yearOf(episode.air_date) === targetYear);
+          if (start < 0) {
+            start = eps.findIndex((episode) => {
+              const airedYear = yearOf(episode.air_date);
+              return airedYear && Math.abs(airedYear - targetYear) <= 1;
+            });
+          }
+          if (start >= 0) {
+            const end = expectedCount > 0 ? Math.min(eps.length, start + expectedCount) : eps.length;
+            scopedEpisodes = eps.slice(start, end);
+          }
+        }
+
+        // TMDB seasons sometimes number episodes absolutely (e.g. Naruto S5 = 89..),
+        // so rebase to 1..N against the season's lowest episode number.
+        const nums = scopedEpisodes.map((episode) => Number(episode.episode_number || 0)).filter((number) => number > 0);
+        const minEp = nums.length ? Math.min(...nums) : 1;
+        const offset = minEp > 0 ? minEp - 1 : 0;
+        const stills = {};
+        const metas = {};
+        const stillPaths = [];
+        for (const episode of scopedEpisodes) {
+          const local = Number(episode.episode_number) - offset;
+          if (local <= 0) continue;
+          const still = tmdbStillUrl(episode.still_path);
+          if (still) stills[local] = still;
+          if (episode.still_path) stillPaths.push(episode.still_path);
+          metas[local] = {
+            episode: local,
+            title: episode.name || "",
+            description: episode.overview || "",
+            aired: episode.air_date || "",
+            thumbnail: still
+          };
+        }
+
+        const poster = tmdbPosterUrl(payload?.season?.poster_path);
+        let backdrop = "";
+        if (stillPaths.length) {
+          const fraction = Math.min(0.85, 0.2 + Math.max(0, sNum - 1) * 0.18);
+          const pick = stillPaths[Math.min(stillPaths.length - 1, Math.floor(stillPaths.length * fraction))];
+          backdrop = tmdbBackdropUrl(pick);
+        }
+        // The same live show object may be enriched/replaced while this fetch is
+        // in flight. Recompute the mapping before applying it so an old response
+        // cannot paint another title or another season into the selected route.
+        const currentTmdbSeasonNumber = mapAppSeasonToTmdb(anime, sNum, appSeasonMeta);
+        const sameIdentity = (!requestAnimeId || String(anime.id || "") === requestAnimeId)
+          && (!requestAniListId || String(anime.anilistId || "") === requestAniListId)
+          && (!requestTmdbId || String(anime.tmdbId || "") === requestTmdbId);
+        if (!sameIdentity || Number(currentTmdbSeasonNumber) !== Number(tmdbSeasonNumber)) return anime;
+
+        const data = {
+          stills,
+          metas,
+          poster,
+          backdrop,
+          animeId: requestAnimeId || null,
+          anilistId: requestAniListId || null,
+          tmdbId: requestTmdbId || null,
+          appSeasonNumber: sNum,
+          tmdbSeasonNumber,
+          requestedEpisodeCount: expectedCount
+        };
+        applySeasonArtwork(anime, sNum, data);
+        writeSeasonArtCache(anime, sNum, data);
+
+        debug(`season-aware: app S${sNum} -> TMDB S${tmdbSeasonNumber} (${Object.keys(stills).length} stills)`);
+        if (typeof renderEpisodeList === "function" && typeof state !== "undefined" &&
+            state.activeShow && state.activeShow.id === anime.id) {
+          renderEpisodeList(state.activeShow);
+          if (typeof refreshActiveWatchBackdrop === "function") refreshActiveWatchBackdrop();
+        }
+        return anime;
+      } catch (err) {
+        debug(`season-aware fetch failed: ${err && err.message}`);
+        return anime;
+      } finally {
+        triedSeasons.add(sNum);
+        _seasonStillsFetching.delete(key);
+      }
+    })();
+
+    _seasonStillsFetching.set(key, request);
+    return request;
+  }
+
+  // Per-season episode metadata (title/aired/still), preferring the season-aware
+  // map when present, falling back to the flat one. Returns null when unknown.
+  function getSeasonEpisodeMeta(anime, appSeasonNumber, episodeNumber) {
+    if (!anime) return null;
+    const sNum = Number(appSeasonNumber || 0);
+    const num = Number(episodeNumber || 0);
+    if (!num) return null;
+    if (sNum && anime.tmdbEpisodesBySeasonNum && anime.tmdbEpisodesBySeasonNum[sNum]) {
+      const scoped = anime.tmdbEpisodesBySeasonNum[sNum];
+      if (scoped[num]) return scoped[num];
+      if (requiresSeasonScopedEpisodeArt(anime, sNum)) return null;
+      const localMax = Math.max(0, ...Object.keys(scoped).map((key) => Number(key) || 0));
+      if (num <= localMax) return null;
+    }
+    if (requiresSeasonScopedEpisodeArt(anime, sNum)) return null;
+    return anime.tmdbEpisodesByNum ? (anime.tmdbEpisodesByNum[num] || null) : null;
+  }
+
+  return {
+    firstValidImage,
+    markImageFailed,
+    isImageFailed,
+    hydrateTmdbImages,
+    getEpisodeStill,
+    getNearestEpisodeStill,
+    getSeasonBackdrop,
+    firstSeasonStillFromMap,
+    ensureSeasonStills,
+    getSeasonEpisodeMeta,
+    resolveEpisodeThumbnail,
+    resolvePrePlayerBackground,
+    resolvePrePlayerPoster,
+    findTmdbSeasonForEpisode,
+    lazyFetchEpisodeStill,
+    usesContinuousGlobalEpisodeMap,
+    // exposed for tests / debugging
+    scoreCandidate,
+    titleScore,
+    pickTmdbSeason
+  };
+})();
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = ImageResolver;
+}

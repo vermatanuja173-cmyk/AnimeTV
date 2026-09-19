@@ -1,0 +1,1327 @@
+:root {
+  color-scheme: dark;
+  --ztv-bg: #05060d;
+  --ztv-panel: rgba(11, 13, 24, 0.74);
+  --ztv-panel-strong: rgba(17, 20, 34, 0.92);
+  --ztv-text: #f7f7fb;
+  --ztv-muted: #aaa9bd;
+  --ztv-coral: #ff6b61;
+  --ztv-mint: #8de5d2;
+  --ztv-border: rgba(255, 255, 255, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  /* Same reason as the app shell: the UA tap highlight put a blue wash over the
+     video surface and every control on touch. The player draws its own states. */
+  -webkit-tap-highlight-color: transparent;
+  background: #000;
+  color: var(--ztv-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button {
+  font: inherit;
+}
+
+.ztv-player-page {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  /* One row. The title bar is an overlay now, so it never takes height from the
+     video - showing or hiding it cannot resize the picture. */
+  grid-template-rows: 1fr;
+  min-width: 0;
+  min-height: 0;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(139, 92, 246, 0.16), transparent 38%),
+    linear-gradient(180deg, #0a0b14 0%, #000 100%);
+}
+
+.ztv-backdrop {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  opacity: 0.2;
+  filter: blur(28px) saturate(1.2);
+  transform: scale(1.06);
+  pointer-events: none;
+}
+
+/* Overlaid on the picture, not stacked above it. It used to be a solid black
+   row in the page grid, which meant the video was shrunk by the height of the
+   bar and the bar itself read as a foreign strip bolted to the top. Absolute +
+   a gradient that fades to nothing downward matches what the player already does
+   at the bottom (.art-bottom uses the same ramp, mirrored), and the video keeps
+   the full page either way.
+   pointer-events are off for the bar so its transparent lower half never eats a
+   click meant for the picture; the things you can actually press turn them back
+   on individually. */
+.ztv-player-topbar {
+  position: absolute;
+  /* Anchored to the picture, not the player box - see syncPictureInsets(). */
+  top: var(--ztv-letter, 0px);
+  left: var(--ztv-pillar, 0px);
+  right: var(--ztv-pillar, 0px);
+  /* The chrome now lives INSIDE .art-video-player (so fullscreen renders it), so
+     it competes with Artplayer's own stacking: mask ~10, layers ~20, control bar
+     60. At the old z-index 5 it sat under the mask and the centre play layer.
+     61 puts it just above the control bar it now hides and shows with. */
+  z-index: 61;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 76px;
+  /* Left/right padding clears the two corner buttons, which are not in here. */
+  padding:
+    calc(14px + env(safe-area-inset-top))
+    calc(66px + env(safe-area-inset-right))
+    34px
+    calc(66px + env(safe-area-inset-left));
+  background: linear-gradient(
+    180deg,
+    rgba(2, 3, 10, 0.86) 0%,
+    rgba(2, 3, 10, 0.45) 52%,
+    rgba(2, 3, 10, 0) 100%
+  );
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.ztv-player-topbar a,
+.ztv-player-topbar button,
+.ztv-player-topbar input {
+  pointer-events: auto;
+}
+
+/* Collapsed: the gradient and the big title go, the corner buttons stay put. */
+body.ztv-chrome-hidden .ztv-player-topbar {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+/* Auto-hide, driven by Artplayer's own control timing (see
+   followControlVisibility). The chrome fades with the progress bar when the
+   pointer goes idle and returns on the next move, in fullscreen as well as
+   inline - the chrome now lives inside $player so fullscreen renders it. */
+body.ztv-controls-hidden .ztv-player-topbar,
+body.ztv-controls-hidden .ztv-corner-button,
+body.ztv-controls-hidden .ztv-floating-label {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.ztv-corner-button,
+.ztv-floating-label {
+  transition: opacity 180ms ease, visibility 180ms ease;
+}
+
+.ztv-icon-button,
+.ztv-primary-button,
+.ztv-secondary-button {
+  border: 1px solid var(--ztv-border);
+  color: var(--ztv-text);
+  cursor: pointer;
+}
+
+.ztv-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.ztv-icon-button:hover,
+.ztv-icon-button:focus-visible {
+  background: rgba(139, 92, 246, 0.32);
+  outline: none;
+}
+
+.ztv-title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.ztv-kicker {
+  margin: 0 0 0.2rem;
+  color: var(--ztv-muted);
+  font-size: clamp(0.78rem, 1.5vw, 0.9rem);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.ztv-title-block h1 {
+  margin: 0;
+  color: var(--ztv-text);
+  font-size: clamp(1rem, 2.2vw, 1.35rem);
+  font-weight: 900;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ztv-player-brand {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  padding-left: 1rem;
+  opacity: 0.9;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ztv-brand-banner {
+  display: block;
+  width: clamp(7.5rem, 16vw, 11rem);
+  height: auto;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
+}
+
+.ztv-brand-mark {
+  display: none;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
+}
+
+.ztv-player-shell {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.ztv-artplayer,
+.artplayer-app,
+.art-video {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.art-video {
+  object-fit: contain;
+  background: #000;
+}
+
+body.fit-cover .art-video {
+  object-fit: cover;
+}
+
+body.fit-fill .art-video {
+  object-fit: fill;
+}
+
+.ztv-loading,
+.ztv-error {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.ztv-loading strong {
+  margin-top: 5.3rem;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: clamp(0.8rem, 2vw, 0.95rem);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ztv-loader-mark {
+  position: absolute;
+  width: 70px;
+  height: 70px;
+}
+
+.ztv-loader-mark::after {
+  content: "Z";
+  position: absolute;
+  inset: 13px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(17, 20, 34, 0.86);
+  color: var(--ztv-text);
+  font-weight: 950;
+  box-shadow: 0 0 34px rgba(139, 92, 246, 0.4);
+}
+
+.ztv-loader-mark span {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 4px solid transparent;
+  border-top-color: var(--ztv-purple);
+  border-right-color: var(--ztv-cyan);
+  animation: ztv-spin 1s linear infinite;
+}
+
+.ztv-loader-mark span + span {
+  inset: 8px;
+  border-top-color: #f01f60;
+  border-right-color: transparent;
+  animation-duration: 1.45s;
+  animation-direction: reverse;
+}
+
+@keyframes ztv-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ztv-error {
+  background:
+    radial-gradient(circle at center, rgba(139, 92, 246, 0.13), transparent 28%),
+    rgba(0, 0, 0, 0.52);
+  pointer-events: auto;
+}
+
+.ztv-error[hidden],
+.ztv-loading[hidden] {
+  display: none;
+}
+
+.ztv-seek-toast {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 20;
+  transform: translate(-50%, -50%);
+  min-width: 86px;
+  padding: 0.72rem 1rem;
+  border: 1px solid rgba(24, 199, 238, 0.42);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(139, 92, 246, 0.88), rgba(24, 199, 238, 0.78)),
+    rgba(5, 6, 13, 0.8);
+  color: #fff;
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  font-weight: 950;
+  text-align: center;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45), 0 0 34px rgba(139, 92, 246, 0.28);
+  pointer-events: none;
+}
+
+.ztv-seek-toast[hidden] {
+  display: none;
+}
+
+.ztv-error > * {
+  grid-column: 1;
+}
+
+.ztv-error-play {
+  width: 0;
+  height: 0;
+  margin-bottom: 1.6rem;
+  border-top: 34px solid transparent;
+  border-bottom: 34px solid transparent;
+  border-left: 54px solid rgba(255, 255, 255, 0.96);
+}
+
+.ztv-error strong {
+  max-width: min(760px, 92vw);
+  font-size: clamp(1.3rem, 3vw, 1.8rem);
+  font-weight: 950;
+}
+
+.ztv-error p {
+  max-width: min(560px, 90vw);
+  margin: 0.8rem 0 1.6rem;
+  color: var(--ztv-muted);
+  font-size: clamp(0.95rem, 2vw, 1.08rem);
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.ztv-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.8rem;
+}
+
+.ztv-primary-button,
+.ztv-secondary-button {
+  min-height: 46px;
+  padding: 0 1.3rem;
+  border-radius: 999px;
+  font-weight: 900;
+}
+
+.ztv-primary-button {
+  background: linear-gradient(135deg, var(--ztv-purple), var(--ztv-cyan));
+}
+
+.ztv-secondary-button {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.art-control-volume,
+.art-control-rewind-10,
+.art-control-forward-10,
+.art-control-next-episode,
+.art-control-playbackRate,
+.art-control-setting,
+.art-control-pip,
+.art-control-chromecast,
+.art-control-fullscreenWeb,
+.art-control-fullscreen {
+  min-width: 40px;
+}
+
+/* The Chromecast plugin ships its own 20x20 icon inside an <i>, which sits on the
+   text baseline and renders a little larger than the rest of the bar. Centre it and
+   match the others. The plugin sets the icon's COLOUR inline to signal session
+   state (white idle, orange connecting, red connected), so colour is left alone
+   deliberately - that feedback is the only indication casting is live. */
+.art-control-chromecast {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+.art-control-chromecast .art-icon-cast {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.art-control-chromecast .art-icon-cast svg {
+  width: 19px;
+  height: 19px;
+}
+
+/* The plugin used to set the icon colour inline to signal session state (white
+   idle, orange connecting, red connected). We render the icon ourselves now, so
+   the same three states are classes toggled by syncCastControl(). Colour only -
+   the glyph, its size and its position are unchanged. */
+.art-control-chromecast.is-cast-connecting .art-icon-cast svg {
+  color: #f7a13a;
+  fill: currentColor;
+}
+
+.art-control-chromecast.is-cast-connected .art-icon-cast svg {
+  color: #ff5252;
+  fill: currentColor;
+}
+
+/* Discovery found nothing: dim it rather than hide it, so the control does not
+   appear and disappear from the bar and shift every other button. */
+.art-control-chromecast.is-cast-unavailable {
+  opacity: 0.45;
+}
+
+/* Stop stays out of the flex row so it cannot crowd phone controls, but is anchored
+   immediately to the left of Cast. It appears only after the receiver has advanced
+   through real playback, so an auto-joined session cannot expose it early. */
+.art-controls-right {
+  position: relative;
+}
+
+.art-control-chromecast-stop {
+  position: absolute !important;
+  left: -46px;
+  right: auto;
+  bottom: 0;
+  z-index: 3;
+  display: flex !important;
+  width: 46px !important;
+  min-width: 46px !important;
+  height: 46px;
+  padding: 0 !important;
+  align-items: center;
+  justify-content: center;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms;
+}
+
+.art-control-chromecast-stop.is-visible {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.art-control-chromecast-stop.is-stopping {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.ztv-cast-stop-button {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  color: #ff6262;
+  background: rgba(10, 12, 22, 0.9);
+  border: 1px solid rgba(255, 98, 98, 0.58);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  cursor: pointer;
+}
+
+.ztv-cast-stop-button:hover,
+.ztv-cast-stop-button:focus-visible {
+  color: #fff;
+  background: rgba(180, 40, 48, 0.94);
+  outline: 2px solid rgba(255, 255, 255, 0.88);
+  outline-offset: 2px;
+}
+
+.ztv-cast-stop-button svg {
+  width: 17px;
+  height: 17px;
+  fill: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .art-control-chromecast-stop {
+    transition: none;
+  }
+}
+
+.art-control-rewind-10,
+.art-control-forward-10,
+.art-control-next-episode {
+  position: relative;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.9);
+  transition: color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.art-control-rewind-10:hover,
+.art-control-forward-10:hover,
+.art-control-next-episode:not(.is-disabled):hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.11);
+  transform: translateY(-1px);
+}
+
+.ztv-skip-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+  overflow: visible;
+}
+
+.ztv-skip-arrow {
+  stroke: currentColor;
+  stroke-width: 2.15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ztv-skip-value {
+  display: block;
+  color: currentColor;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.art-control-rewind-10:focus-visible,
+.art-control-forward-10:focus-visible,
+.art-control-next-episode:focus-visible,
+.art-control-ztv-more:focus-visible {
+  outline: 2px solid var(--ztv-cyan);
+  outline-offset: -4px;
+}
+
+.ztv-next-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
+
+.art-control-next-episode.is-disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+/* Let the controls sit over the picture without covering it with an opaque bar. */
+.art-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+  background: linear-gradient(
+    to top,
+    rgba(2, 3, 10, 0.82) 0%,
+    rgba(2, 3, 10, 0.42) 48%,
+    rgba(2, 3, 10, 0) 100%
+  ) !important;
+}
+
+/* Artplayer supplies the interaction; these rules give its volume panel the
+   narrow, transparent rail used by the rest of the player. */
+.art-control-volume .art-volume-panel {
+  width: 44px !important;
+  height: 118px !important;
+  bottom: calc(100% + 21px) !important;
+  padding: 0 4px !important;
+  transform: none !important;
+}
+
+.art-control-volume .art-volume-panel::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 24px;
+}
+
+.art-control-volume.is-volume-open .art-volume-panel {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+
+.art-control-volume .art-volume-inner {
+  width: 36px !important;
+  height: 112px !important;
+  margin: 0 auto !important;
+  background: rgba(4, 6, 16, 0.58) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.art-control-volume .art-volume-val {
+  display: none !important;
+}
+
+.art-control-volume .art-volume-slider {
+  width: 100% !important;
+  height: 88px !important;
+  margin: auto !important;
+}
+
+.art-control-volume .art-volume-handle {
+  width: 3px !important;
+  height: 88px !important;
+  margin: 0 auto !important;
+  border-radius: 3px !important;
+  background: rgba(255, 255, 255, 0.34) !important;
+}
+
+.art-control-volume .art-volume-loaded {
+  left: 0 !important;
+  width: 3px !important;
+  background: rgba(255, 255, 255, 0.88) !important;
+}
+
+.art-control-volume .art-volume-indicator {
+  left: 50% !important;
+  width: 14px !important;
+  height: 14px !important;
+  margin-left: 0 !important;
+  transform: translateX(-50%) !important;
+  background: #fff !important;
+  border: 2px solid rgba(255, 255, 255, 0.72) !important;
+  box-shadow: 0 2px 9px rgba(0, 0, 0, 0.48) !important;
+}
+
+/* Keep captions above Artplayer's timeline and the device safe area. */
+.art-subtitle {
+  bottom: calc(4.75rem + env(safe-area-inset-bottom)) !important;
+  max-width: min(92%, 76rem);
+  margin-inline: auto;
+  padding-inline: clamp(0.75rem, 3vw, 2rem);
+  line-height: 1.35 !important;
+  white-space: normal !important;
+}
+
+@media (max-width: 700px) {
+  .ztv-player-topbar {
+    min-height: 64px;
+    gap: 0.7rem;
+    /* Still clears the two corner buttons, which keep their 12px inset here. */
+    padding:
+      calc(10px + env(safe-area-inset-top))
+      calc(62px + env(safe-area-inset-right))
+      26px
+      calc(62px + env(safe-area-inset-left));
+  }
+
+  .ztv-icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .ztv-title-block h1 {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .ztv-player-brand {
+    min-width: 34px;
+    padding-left: 0.35rem;
+  }
+
+  .ztv-brand-banner {
+    width: 7.5rem;
+  }
+
+  .art-subtitle {
+    bottom: calc(4.25rem + env(safe-area-inset-bottom)) !important;
+    font-size: clamp(1rem, 4vw, 1.35rem) !important;
+  }
+}
+
+
+/* The overflow control is the phone counterpart of the desktop gear, so only one
+   of the two is ever on the bar. Hidden by default and switched on by the phone
+   blocks below, so desktop keeps its native settings/PiP/web-fullscreen controls
+   untouched no matter which phone rule matches. */
+.art-control-ztv-more { display: none !important; }
+
+.ztv-more-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+@media (max-width: 760px) {
+  .art-control-ztv-more { display: flex !important; }
+
+  /* Keep the compact transport row focused on playback. The stock volume
+     control remains visible and its rail now opens entirely above the timeline.
+     These three are not dropped - they move into the "..." sheet below. */
+  .art-control-pip,
+  .art-control-fullscreenWeb,
+  .art-control-setting { display: none !important; }
+
+  /* ArtPlayer narrows its controls to 38px at phone widths. With the secondary
+     controls removed above there is room to bring the remaining touch targets
+     back to 44px, which is the minimum comfortable tap size. */
+  .art-control-rewind-10,
+  .art-control-forward-10,
+  .art-control-playAndPause,
+  .art-control-next-episode,
+  .art-control-volume,
+  .art-control-ztv-more,
+  .art-control-fullscreen {
+    /* !important: ArtPlayer sets the control width in its own runtime stylesheet. */
+    min-width: 44px !important;
+  }
+
+  /* Reclaim width from the timestamp so the row fits without shrinking targets.
+     !important for the same reason as the widths above: Artplayer's runtime
+     <style> is injected after this file, so an equal-specificity rule loses and
+     the timestamp silently stayed at its default 12px/5px. */
+  .art-control-time {
+    font-size: 0.72rem !important;
+    padding: 0 0.3rem !important;
+  }
+}
+
+/* Narrow phones (375px) cannot hold seven 44px targets plus the timestamp. Two
+   steps back rather than one: 40px targets, and a genuinely smaller timestamp.
+   Measured at 375px - 8 controls totalled 361px against 355px of usable row, so
+   the row overflowed; tightening the timestamp alone recovers it and the touch
+   targets stay at 40px. */
+@media (max-width: 430px) {
+  .art-control-rewind-10,
+  .art-control-forward-10,
+  .art-control-playAndPause,
+  .art-control-next-episode,
+  .art-control-volume,
+  .art-control-ztv-more,
+  .art-control-fullscreen {
+    min-width: 40px !important;
+  }
+
+  .art-control-time {
+    font-size: 0.64rem !important;
+    padding: 0 0.1rem !important;
+    min-width: 0 !important;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Artplayer parks the controls lock against the left edge, vertically centred,
+   where it sits on top of the picture and next to nothing else. Top-right keeps
+   it clear of the transport row, the subtitles and the seek gestures, and it is
+   where a fullscreen overlay button is normally looked for. Artplayer still owns
+   when it appears (touch + fullscreen); this only moves it. */
+.art-layer-lock {
+  top: calc(12px + env(safe-area-inset-top)) !important;
+  right: calc(12px + env(safe-area-inset-right)) !important;
+  left: auto !important;
+  bottom: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+  /* 44px: the lock is a touch-only control, so it gets a full touch target.
+     No display rule here on purpose - Artplayer toggles this layer's display to
+     show and hide it, and overriding that would either pin it on screen or stop
+     it appearing at all. */
+  width: 44px !important;
+  height: 44px !important;
+  background: rgba(4, 6, 16, 0.62) !important;
+  border: 1px solid var(--ztv-border);
+  backdrop-filter: blur(10px);
+}
+
+/* A phone turned sideways is 812x375 - past the 760px gate, so it was getting
+   the desktop gear and its small dropdown on a 375px-tall screen. Width alone
+   cannot tell a landscape phone from a small desktop window, and (pointer:
+   coarse) does not survive desktop emulation, so this keys off .art-mobile -
+   Artplayer's own device detection, set once at construction. A short desktop
+   window never carries that class, so desktop is untouched. Tablets are well
+   above 500px tall in either orientation and keep the desktop controls. */
+@media (max-height: 500px) {
+  .art-mobile .art-control-ztv-more { display: flex !important; }
+
+  .art-mobile .art-control-pip,
+  .art-mobile .art-control-fullscreenWeb,
+  .art-mobile .art-control-setting { display: none !important; }
+
+  .art-mobile .art-control-rewind-10,
+  .art-mobile .art-control-forward-10,
+  .art-mobile .art-control-playAndPause,
+  .art-mobile .art-control-next-episode,
+  .art-mobile .art-control-volume,
+  .art-mobile .art-control-ztv-more,
+  .art-mobile .art-control-fullscreen {
+    min-width: 44px !important;
+  }
+}
+
+/* ── Persistent corner chrome ────────────────────────────────────────────
+   Back and the bar toggle. Both are absolutely placed against the page corners
+   and are NOT children of the title bar, which is what keeps them in exactly
+   the same spot whether the bar is open or collapsed - the toggle never slides
+   out from under the finger that just pressed it, and back never disappears
+   with the bar. Same visual language as the sheet and the lock: a small blurred
+   slab that stays quiet over the picture until you go for it. */
+.ztv-corner-button {
+  position: absolute;
+  z-index: 62;
+  top: calc(12px + var(--ztv-letter, 0px) + env(safe-area-inset-top));
+  display: grid;
+  place-items: center;
+  /* 44px - a full touch target even though it reads small. */
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--ztv-border);
+  border-radius: 12px;
+  background: rgba(4, 6, 16, 0.46);
+  backdrop-filter: blur(10px);
+  color: var(--ztv-text);
+  opacity: 0.55;
+  cursor: pointer;
+  transition: opacity 160ms ease, background 160ms ease;
+}
+
+/* [hidden] on a button still lays out as a grid box without this. */
+.ztv-corner-button[hidden] {
+  display: none;
+}
+
+.ztv-corner-back {
+  left: calc(12px + var(--ztv-pillar, 0px) + env(safe-area-inset-left));
+}
+
+.ztv-corner-toggle {
+  right: calc(12px + var(--ztv-pillar, 0px) + env(safe-area-inset-right));
+}
+
+.ztv-corner-button:hover,
+.ztv-corner-button:focus-visible {
+  opacity: 1;
+  background: rgba(139, 92, 246, 0.34);
+  outline: none;
+}
+
+.ztv-corner-button:focus-visible {
+  box-shadow: 0 0 0 2px var(--ztv-cyan);
+}
+
+.ztv-corner-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* One icon, flipped - so the control reads as the same button in both states
+   rather than two different ones swapping places. */
+body.ztv-chrome-hidden .ztv-corner-toggle svg {
+  transform: rotate(180deg);
+}
+
+/* The compact title while the bar is collapsed. Sits on the back button's line,
+   between the two corners, so it never covers the picture below them. */
+.ztv-floating-label {
+  position: absolute;
+  z-index: 62;
+  top: calc(12px + var(--ztv-letter, 0px) + env(safe-area-inset-top));
+  left: calc(64px + var(--ztv-pillar, 0px) + env(safe-area-inset-left));
+  right: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 44px;
+  margin: 0;
+  padding: 0 0.7rem;
+  border-radius: 12px;
+  /* Deliberately lighter than the buttons: it is information, not a control. */
+  background: rgba(4, 6, 16, 0.32);
+  backdrop-filter: blur(10px);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  width: fit-content;
+  max-width: calc(
+    100% - 128px
+    - var(--ztv-pillar, 0px) - var(--ztv-pillar, 0px)
+    - env(safe-area-inset-left) - env(safe-area-inset-right)
+  );
+  opacity: 0.62;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+/* Keep the compact episode label inside the space between the two corner
+   controls. Short labels hug their text; unusually long titles ellipsize before
+   reaching the right-side button. */
+@media (max-width: 1024px) {
+  .ztv-floating-label {
+    font-size: clamp(0.68rem, 1.8vw, 0.78rem);
+  }
+
+  .ztv-title-block h1 {
+    font-size: clamp(0.82rem, 2.2vw, 1.05rem);
+    white-space: nowrap;
+    display: block;
+    text-overflow: ellipsis;
+  }
+}
+
+/* Narrow embedded players cannot hold both ten-second controls plus transport,
+   time, Cast, overflow and fullscreen. Preserve the essential controls and the
+   fullscreen button; double-tap/seek-bar still provide precise seeking. */
+@media (max-width: 560px) {
+  .art-control-rewind-10,
+  .art-control-forward-10 {
+    display: none !important;
+  }
+
+  .art-controls-left {
+    min-width: 0 !important;
+  }
+
+  .art-controls-right {
+    flex: 0 0 auto !important;
+  }
+}
+
+.ztv-floating-label[hidden] {
+  display: none;
+}
+
+.ztv-floating-ep {
+  flex: 0 0 auto;
+  color: var(--ztv-cyan);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.ztv-floating-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ztv-text);
+  font-weight: 700;
+}
+
+/* ── Phone options sheet ──────────────────────────────────────────────────
+   Lives inside Artplayer's own container so it survives fullscreen, and above
+   .art-settings (z-index 90) so nothing of the player's own UI overlaps it. */
+.ztv-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.ztv-sheet[hidden] { display: none; }
+
+.ztv-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  /* Dim rather than hide: the picture stays visible behind the sheet, which is
+     what makes a quality or speed change readable while it happens. */
+  background: rgba(2, 3, 10, 0.42);
+}
+
+.ztv-sheet-panel {
+  position: relative;
+  width: 100%;
+  /* Never the whole video, and never taller than the player itself. */
+  max-height: min(62%, 24rem);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: rgba(9, 11, 20, 0.96);
+  border-top: 1px solid var(--ztv-border);
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -18px 44px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px);
+}
+
+.ztv-sheet-panel:focus { outline: none; }
+
+.ztv-sheet-grip {
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.ztv-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem calc(0.5rem + env(safe-area-inset-right)) 0.35rem calc(0.5rem + env(safe-area-inset-left));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ztv-sheet-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding-inline: 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ztv-sheet-back,
+.ztv-sheet-close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ztv-text);
+  cursor: pointer;
+}
+
+.ztv-sheet-back[hidden] { display: none; }
+
+.ztv-sheet-back svg,
+.ztv-sheet-close svg {
+  width: 20px;
+  height: 20px;
+}
+
+.ztv-sheet-back:hover,
+.ztv-sheet-close:hover { background: rgba(255, 255, 255, 0.08); }
+
+.ztv-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.3rem calc(0.35rem + env(safe-area-inset-right)) 0.6rem calc(0.35rem + env(safe-area-inset-left));
+}
+
+.ztv-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  /* 48px: comfortably above the 44px touch-target minimum, and the reason the
+     body scrolls instead of the rows compressing. */
+  min-height: 48px;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ztv-text);
+  font-size: 0.92rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ztv-sheet-row.is-static {
+  cursor: default;
+  color: var(--ztv-muted);
+}
+
+.ztv-sheet-row:not(.is-static):hover,
+.ztv-sheet-row:not(.is-static):focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.ztv-sheet-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ztv-cyan);
+}
+
+.ztv-sheet-row.is-checked { color: var(--ztv-cyan); }
+
+.ztv-sheet-row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ztv-sheet-row-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ztv-muted);
+  font-size: 0.85rem;
+}
+
+.ztv-sheet-tick,
+.ztv-sheet-chevron {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+
+.ztv-sheet-chevron { color: var(--ztv-muted); }
+
+.ztv-sheet-tick svg,
+.ztv-sheet-chevron svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Landscape phone: the player is only ~283px tall, where 62% is barely two rows.
+   Give the sheet a larger share of a short player - the picture stays visible
+   above it, and the body scrolls either way. Must come after the base rule
+   above, which has the same specificity. */
+@media (max-height: 500px) {
+  .ztv-sheet-panel { max-height: min(78%, 16rem); }
+}
+
+/* ── Top-bar mascot ───────────────────────────────────────────────────────
+  Fills the dead space between the episode title and the zxkai banner with
+   a single animated GIF - the GIF supplies the motion, so there is no JS frame
+   loop and no CSS keyframes to keep in sync with it.
+   Decorative only: no pointer events, and it sits in its own flex cell so it can
+   never squeeze the title (which keeps its own ellipsis). player.js removes it if
+   the file is missing. Hidden on narrow screens, where the bar has no spare room. */
+.ztv-mascot {
+  /* Sits still next to the wordmark. NOT flex:1 - the title block is flex:1 and
+     would otherwise have to share the free space, truncating episode names. */
+  flex: 0 0 auto;
+  margin-left: auto;             /* park it beside the brand, not mid-bar */
+  /* Fixed height so the sprite can never stretch the bar; width follows the
+     sprite, which is ~0.92 of its height. */
+  width: auto;
+  height: 64px;
+  align-self: center;
+  display: none;                 /* enabled by the width query below */
+  place-items: end center;
+  pointer-events: none;
+  user-select: none;
+  overflow: hidden;
+}
+
+.ztv-mascot-frame {
+  display: block;
+  width: auto;
+  /* Measured from the files: the character fills 198 of the 208px frame (ratio
+     0.952), i.e. almost no transparent padding. So the box height IS the
+     character height - no scaling needed, and scaling up only clipped her head
+     against the bar. Filling the bar's content height puts her at ~61px against
+     22px of title lettering, comfortably larger while the bar stays 92px. */
+  height: 100%;
+  max-height: 64px;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.45));
+  /* Poses cross-fade into each other rather than snapping; player.js preloads
+     the next one first, so this never fades to an empty box. */
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+/* 720px, not 900: the player iframe is narrower than the page (the watch view
+   keeps a side panel), so it measures ~870px on a normal desktop. A 900px gate
+   hid the mascot on every desktop. Phones are far below this. */
+@media (min-width: 720px) {
+  .ztv-mascot { display: grid; }
+}
+
+/* A GIF cannot be paused from CSS, so motion-sensitive viewers simply do not
+   get it rather than getting an animation they cannot stop. */
+@media (prefers-reduced-motion: reduce) {
+  .ztv-mascot { display: none !important; }
+}
+
+/* Phones always use the compact episode/title pill beside Back. Artplayer's
+   .art-mobile marker survives rotation and fullscreen, unlike a width query,
+   so a landscape phone never falls back to the desktop bar or its chevron. */
+.art-mobile .ztv-player-topbar,
+.art-mobile .ztv-corner-toggle {
+  display: none !important;
+}
+
+.art-mobile .ztv-floating-label {
+  display: flex;
+  font-size: 0.7rem;
+}
+
+/* The settings popover opened across the timeline: its bottom edge sat at 774px
+   with the progress bar spanning 758-764, so the panel covered the scrubber you
+   might be aiming for. The volume rail already clears it (bottom: 100% + 21px);
+   this lifts the settings panel to the same side of the bar.
+   !important because Artplayer sets `bottom: 38px` from its own runtime stylesheet,
+   which is injected after this file. */
+.art-settings {
+  bottom: calc(4.4rem + env(safe-area-inset-bottom)) !important;
+}
+
+/* ── Skip Opening / Skip Ending ─────────────────────────────────────────────
+   Lives inside .art-video-player, so it follows the picture into fullscreen and
+   into mobile landscape with no extra handling. Sits ABOVE the subtitle line
+   (.art-subtitle is at 4.75rem, 4.25rem on phones) rather than beside it, so a
+   long centred subtitle can never end up underneath the button, and clear of
+   .art-bottom so it never covers a control. Only the button is interactive -
+   the layer itself is pointer-events:none so it cannot steal a click on the
+   picture, which is the play/pause toggle. */
+.ztv-skip-layer {
+  position: absolute;
+  right: clamp(0.75rem, 2.5vw, 1.75rem);
+  bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  z-index: 60;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(0.4rem);
+  visibility: hidden;
+  transition: opacity 180ms ease, transform 180ms ease, visibility 180ms ease;
+}
+.ztv-skip-layer.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+.ztv-skip-btn {
+  pointer-events: auto;
+  /* 44px min: a real touch target even where the label is short. */
+  min-height: 44px;
+  padding: 0 clamp(0.9rem, 2.6vw, 1.35rem);
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 12px;
+  /* Deliberately near-opaque rather than a light glass panel: this has to stay
+     legible over a bright sky or a white flash, which a translucent fill does not. */
+  background: rgba(6, 8, 18, 0.86);
+  backdrop-filter: blur(10px);
+  color: var(--ztv-text);
+  font: inherit;
+  font-size: clamp(0.9rem, 2.4vw, 1rem);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 120ms ease;
+}
+.ztv-skip-btn:hover,
+.ztv-skip-btn:focus-visible {
+  background: rgba(139, 92, 246, 0.9);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+.ztv-skip-btn:focus-visible {
+  outline: 2px solid var(--ztv-text);
+  outline-offset: 2px;
+}
+.ztv-skip-btn:active {
+  transform: scale(0.97);
+}
+
+@media (max-width: 700px) {
+  .ztv-skip-layer {
+    bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Phone landscape: the picture is short, so the whole lower band is tight. The
+   button still has to clear the SUBTITLE line, not just the control bar - at
+   844x390 the subtitle sits at 4.75rem, so 4.25rem put the button straight
+   through it. Sit above the subtitle and shrink the label instead. */
+@media (max-height: 460px) and (orientation: landscape) {
+  .ztv-skip-layer {
+    bottom: calc(6.9rem + env(safe-area-inset-bottom));
+  }
+  .ztv-skip-btn {
+    min-height: 38px;
+    font-size: 0.85rem;
+    padding: 0 0.85rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ztv-skip-layer {
+    transition: opacity 1ms linear, visibility 1ms linear;
+    transform: none;
+  }
+}
