@@ -5,8 +5,8 @@
   --ztv-panel-strong: rgba(17, 20, 34, 0.92);
   --ztv-text: #f7f7fb;
   --ztv-muted: #aaa9bd;
-  --ztv-purple: #8b5cf6;
-  --ztv-cyan: #18c7ee;
+  --ztv-coral: #ff6b61;
+  --ztv-mint: #8de5d2;
   --ztv-border: rgba(255, 255, 255, 0.12);
 }
 
@@ -189,16 +189,10 @@ body.ztv-controls-hidden .ztv-floating-label {
   user-select: none;
 }
 
-.ztv-brand-wordmark {
+.ztv-brand-banner {
   display: block;
-  /* Sized so the "ZenkaiTV" LETTERING matches the episode title's lettering.
-     Measured from the file: the text occupies only 59px of its 148px height
-     (ratio 0.399) because the bolt glyph is much taller, so matching the box to
-     the title line box rendered the words at 10px against 22px of title text.
-     Multiplying the title's own font-size clamp by 1/0.399 (~2.5) makes the two
-     read at the same size at every viewport. */
-  width: auto;
-  height: calc(clamp(1rem, 2.2vw, 1.35rem) * 2.5);
+  width: clamp(7.5rem, 16vw, 11rem);
+  height: auto;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45));
 }
 
@@ -707,12 +701,8 @@ body.fit-fill .art-video {
     padding-left: 0.35rem;
   }
 
-  .ztv-brand-wordmark {
-    display: none;
-  }
-
-  .ztv-brand-mark {
-    display: block;
+  .ztv-brand-banner {
+    width: 7.5rem;
   }
 
   .art-subtitle {

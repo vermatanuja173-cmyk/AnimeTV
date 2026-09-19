@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
-import { join, extname } from "node:path";
+import { join, extname, dirname } from "node:path";
 import { minify as terserMinify } from "terser";
 import CleanCSS from "clean-css";
 import { writeHomepageBootstrap } from "./build-homepage-bootstrap.mjs";
@@ -24,6 +24,11 @@ const files = [
   "logo-round-192.webp",
   "hero-backdrop-placeholder.webp",
   "favicon-32.png",
+  "zxkai-logo.svg",
+  "zxkai-logo.png",
+  "zxkai-logo-192.png",
+  "zxkai-player-banner.svg",
+  "downloads/zxkai-mobile.apk",
   "service-worker.js",
   // Crawler / SEO files — must be copied into the build output (dist) or Vercel's
   // SPA rewrite (/(.*) -> /index.html) serves index.html for them instead.
@@ -110,7 +115,9 @@ async function minifyDir(dir) {
     mkdirSync(outDir, { recursive: true });
 
     for (const file of files) {
-      copyFileSync(join(sourceDir, file), join(outDir, file));
+      const target = join(outDir, file);
+      mkdirSync(dirname(target), { recursive: true });
+      copyFileSync(join(sourceDir, file), target);
     }
 
     copyFileSync(join(sourceDir, "client.js"), join(outDir, "client.js"));

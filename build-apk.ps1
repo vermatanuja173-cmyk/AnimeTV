@@ -14,7 +14,8 @@ Copy-Item -Force `
   (Join-Path $root "service-worker.js"), `
   (Join-Path $root "zxkai-logo.svg"), `
   (Join-Path $root "zxkai-logo.png"), `
-  (Join-Path $root "zxkai-logo-192.png") `
+  (Join-Path $root "zxkai-logo-192.png"), `
+  (Join-Path $root "zxkai-player-banner.svg") `
   -Destination $assetsDir
 
 Copy-Item -Force -Recurse (Join-Path $root "js") $assetsDir

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" role="img" aria-labelledby="title">
+  <title id="title">zxkai player banner</title>
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#162d40"/>
+      <stop offset="1" stop-color="#071019"/>
+    </linearGradient>
+    <linearGradient id="coral" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#ff927d"/>
+      <stop offset="1" stop-color="#ff5b65"/>
+    </linearGradient>
+  </defs>
+  <rect x="3" y="3" width="714" height="174" rx="42" fill="url(#panel)" stroke="#8de5d2" stroke-opacity=".28" stroke-width="6"/>
+  <path d="M48 50h112v25l-72 30h72v25H48v-25l72-30H48z" fill="url(#coral)"/>
+  <path d="M133 82v48l42-24z" fill="#8de5d2"/>
+  <text x="214" y="113" fill="#f7fbff" font-family="Trebuchet MS, sans-serif" font-size="66" font-weight="700" letter-spacing="2">zxkai</text>
+  <circle cx="665" cy="42" r="10" fill="#ffd166"/>
+</svg>

@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Continue"
 $env:Path = "$env:SystemRoot\System32;$env:Path"
 
-$aliasDomain = "zenkaitv.com"
+$aliasDomain = "animesenpai.in"
 
 Write-Host "Building ZenkaiTV static bundle..." -ForegroundColor Cyan
 npm run vercel-build
@@ -31,4 +31,4 @@ if ($LASTEXITCODE -ne 0) {
   throw "Vercel alias update failed."
 }
 
-Write-Host "ZenkaiTV is live at https://$aliasDomain" -ForegroundColor Green
+Write-Host "zxkai is live at https://$aliasDomain" -ForegroundColor Green

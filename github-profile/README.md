@@ -7,7 +7,7 @@
 <p>
   <a href="https://github.com/JSolanoDev/AnimeTV">ZenkaiTV</a>
   ·
-  <a href="https://zenkaitv.com">zenkaitv.com</a>
+  <a href="https://animesenpai.in">animesenpai.in</a>
 </p>
 
 ## Featured Project
@@ -39,4 +39,4 @@ JavaScript | Node.js | Android WebView | Vercel | APIs | UI/UX | Automation
 
 - GitHub: https://github.com/JSolanoDev
 - ZenkaiTV: https://github.com/JSolanoDev/AnimeTV
-- Live app: https://zenkaitv.com
+- Live app: https://animesenpai.in

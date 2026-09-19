@@ -132,7 +132,7 @@
     const episodeSlot = document.getElementById("floatingEpisode");
     const titleSlot = document.getElementById("floatingTitle");
     if (episodeSlot) episodeSlot.textContent = shortEpisodeLabel();
-    if (titleSlot) titleSlot.textContent = title === "ZenkaiTV Video" ? "" : title;
+    if (titleSlot) titleSlot.textContent = title === "zxkai Video" ? "" : title;
 
     let isHidden = true;
     const apply = (hidden, persist) => {
@@ -1128,7 +1128,7 @@
     }
     try {
       const meta = new window.chrome.cast.media.GenericMediaMetadata();
-      meta.title = title || "ZenkaiTV";
+      meta.title = title || "zxkai";
       if (episode) meta.subtitle = String(episode);
       if (poster) meta.images = [new window.chrome.cast.Image(poster)];
       media.metadata = meta;
