@@ -1,5 +1,5 @@
 /**
- * ZenkaiTV Image Resolver
+ * zxkai Image Resolver
  *
  * One reusable system that picks the best available image for every surface
  * (episode thumbnails, pre-player backgrounds, pre-player posters) using a

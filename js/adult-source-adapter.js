@@ -1,5 +1,5 @@
 /**
- * ZenkaiTV AdultSourceAdapter
+ * zxkai AdultSourceAdapter
  *
  * A pluggable interface for an 18+ content source, shaped to match the existing
  * AnimeAV1 scraper (login / search / getDetails). This file intentionally

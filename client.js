@@ -5,7 +5,7 @@ installAdBlockGuards();
 
 function installAdBlockGuards() {
   const blockedOpen = (url = "") => {
-    console.info("ZenkaiTV blocked a popup/ad window.", url);
+    console.info("zxkai blocked a popup/ad window.", url);
     return null;
   };
 
@@ -75,7 +75,7 @@ const fallbackShows = [
   image: "",
   banner: "",
   siteUrl: "",
-  description: "Temporary offline placeholder while ZenkaiTV reconnects to metadata sources.",
+  description: "Temporary offline placeholder while zxkai reconnects to metadata sources.",
   videoUrl: ""
 }));
 
@@ -918,7 +918,7 @@ async function fetchHomepageBootstrapCatalog() {
   const rawItems = Array.isArray(payload)
     ? payload
     : payload.items || payload.results || payload.anime || payload.catalog || payload.data || [];
-  const source = { id: "homepage-bootstrap", name: payload.source || "ZenkaiTV Bootstrap" };
+  const source = { id: "homepage-bootstrap", name: payload.source || "zxkai Bootstrap" };
   return rawItems.map((item, index) => normalizeExternalShow(item, source, index)).filter(Boolean);
 }
 
@@ -933,7 +933,7 @@ function scheduleAnimeAv1LatestLoad(delayMs = 0) {
   }, delayMs);
 }
 
-function applyServerCatalog(serverCatalog = [], label = "ZenkaiTV API") {
+function applyServerCatalog(serverCatalog = [], label = "zxkai API") {
   if (!serverCatalog.length) return false;
   const upgradesProvisionalArtwork = ["none", "bootstrap", "cache"].includes(state.catalogTier);
   replaceRegularCatalog(mergeShows(serverCatalog));
@@ -958,7 +958,7 @@ function scheduleDeferredServerCatalogRefresh(delayMs = 1500) {
   const events = ["pointerdown", "keydown", "wheel", "touchstart"];
   const cleanup = () => events.forEach((event) => window.removeEventListener(event, startRefresh, true));
   const refresh = async () => {
-    const serverCatalog = await timedRequest("ZenkaiTV metadata API", () => fetchLocalMetadataCatalog()).catch(() => []);
+    const serverCatalog = await timedRequest("zxkai metadata API", () => fetchLocalMetadataCatalog()).catch(() => []);
     if (serverCatalog.length) {
       applyServerCatalog(serverCatalog);
       return;
@@ -992,7 +992,7 @@ function scheduleDeferredServerCatalogRefresh(delayMs = 1500) {
 }
 
 async function loadAnimeSources() {
-  setSourceStatus("Loading ZenkaiTV metadata API...");
+  setSourceStatus("Loading zxkai metadata API...");
   render();
   // Arm the splash rather than drop it: it comes down once there is content.
   maybeHideAppLoader();
@@ -1005,7 +1005,7 @@ async function loadAnimeSources() {
     replaceRegularCatalog(cachedCatalog, "cache");
     state.isLoadingCatalog = false;
     resetCarouselIndexForFreshCatalog();
-    setSourceStatus(catalogStatusLabel("Cached ZenkaiTV catalog", cachedCatalog));
+    setSourceStatus(catalogStatusLabel("Cached zxkai catalog", cachedCatalog));
     render();
     scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_INITIAL_CARD_LIMIT), HOME_INITIAL_CARD_LIMIT);
     return true;
@@ -1018,7 +1018,7 @@ async function loadAnimeSources() {
       replaceRegularCatalog(bootstrapCatalog, "bootstrap");
       state.isLoadingCatalog = false;
       resetCarouselIndexForFreshCatalog();
-      setSourceStatus(catalogStatusLabel("ZenkaiTV bootstrap", bootstrapCatalog));
+      setSourceStatus(catalogStatusLabel("zxkai bootstrap", bootstrapCatalog));
       render();
       hasInitialCatalog = true;
       scheduleVisibleMetadataWarm(buildLatestEpisodesList(HOME_INITIAL_CARD_LIMIT), HOME_INITIAL_CARD_LIMIT);
@@ -1029,19 +1029,19 @@ async function loadAnimeSources() {
 
   if (hasInitialCatalog && state.route === "home" && !isDirectDetailRoute) {
     state.apiStatus.metadata = "Deferred";
-    setSourceStatus("Using fast ZenkaiTV homepage catalog");
+    setSourceStatus("Using fast zxkai homepage catalog");
     scheduleDeferredServerCatalogRefresh();
     scheduleHomeRailExpansion();
     scheduleAnimeAv1LatestLoad();
     return;
   }
 
-  const serverCatalog = await timedRequest("ZenkaiTV metadata API", () => fetchLocalMetadataCatalog()).catch(() => []);
+  const serverCatalog = await timedRequest("zxkai metadata API", () => fetchLocalMetadataCatalog()).catch(() => []);
   if (applyServerCatalog(serverCatalog)) return;
 
   state.apiStatus.metadata = "Unavailable";
   state.apiStatus.direct = hasInitialCatalog ? "Deferred" : "Loading";
-  setSourceStatus(hasInitialCatalog ? "Using cached ZenkaiTV catalog" : "Loading AniList and Jikan directly...");
+  setSourceStatus(hasInitialCatalog ? "Using cached zxkai catalog" : "Loading AniList and Jikan directly...");
 
   const cachedDirect = readResponseCache("direct-catalog", CATALOG_CACHE_TTL);
   if (!state.shows.length && cachedDirect?.length) {
@@ -1349,12 +1349,12 @@ async function fetchLocalMetadataCatalog() {
   // shared cache now, but the longer timeout still protects viewers on a slow
   // connection and remains off the critical first-paint path.
   const response = await fetchWithTimeout(LOCAL_METADATA_ENDPOINT, {}, 20000);
-  if (!response.ok) throw new Error("ZenkaiTV metadata API unavailable");
+  if (!response.ok) throw new Error("zxkai metadata API unavailable");
   const payload = await response.json();
   const rawItems = Array.isArray(payload)
     ? payload
     : payload.items || payload.results || payload.anime || payload.catalog || payload.data || [];
-  const source = { id: "animetv-api", name: payload.source || "ZenkaiTV API" };
+  const source = { id: "animetv-api", name: payload.source || "zxkai API" };
   return rawItems.map((item, index) => normalizeExternalShow(item, source, index)).filter(Boolean);
 }
 
@@ -1571,8 +1571,8 @@ function addBasicAddonSource(endpoint, opts = {}) {
     type: opts.type || (isOnline ? "online-addon" : "local-addon"),
     endpoint: normalizedEndpoint,
     description: opts.description || (isOnline
-      ? "Online addon added from ZenkaiTV. It should return normalized catalog JSON from a source you are allowed to use."
-      : "Local addon added from ZenkaiTV. It should return normalized catalog JSON.")
+      ? "Online addon added from zxkai. It should return normalized catalog JSON from a source you are allowed to use."
+      : "Local addon added from zxkai. It should return normalized catalog JSON.")
   };
   persistSmartSource(source);
   return source;
@@ -1593,7 +1593,7 @@ function persistSmartSource(source) {
 function removeSource(sourceId) {
   const source = state.localSources.find((item) => item.id === sourceId);
   if (!source) return;
-  const confirmed = window.confirm(`Remove "${source.name || "this source"}" from ZenkaiTV?`);
+  const confirmed = window.confirm(`Remove "${source.name || "this source"}" from zxkai?`);
   if (!confirmed) return;
 
   if (source.custom) {
@@ -1765,7 +1765,7 @@ async function checkSourceRefreshes() {
   }
 }
 
-// The Smart Source modal: paste a link, see what ZenkaiTV will do, then confirm.
+// The Smart Source modal: paste a link, see what zxkai will do, then confirm.
 function openSmartSourceModal() {
   if (!smartIntegrator) { addBasicAddonSource(window.prompt("Paste a catalog/addon URL.") || ""); return; }
   document.querySelector(".smart-source-backdrop")?.remove();
@@ -1776,7 +1776,7 @@ function openSmartSourceModal() {
     <div class="ss-modal" role="dialog" aria-modal="true" aria-label="Add a source">
       <button class="ss-modal-close focusable" type="button" aria-label="Close">✕</button>
       <h3>Add a Source</h3>
-      <p class="ss-modal-sub">Paste any link — a website, an episode page, a direct video, or an API. ZenkaiTV figures out what to do.</p>
+      <p class="ss-modal-sub">Paste any link — a website, an episode page, a direct video, or an API. zxkai figures out what to do.</p>
       <input class="ss-modal-input focusable" type="url" inputmode="url" autocomplete="off" spellcheck="false"
              placeholder="anime site, episode URL, .mp4 / .m3u8, or API endpoint…">
       <div class="ss-modal-detect" hidden></div>
@@ -1989,7 +1989,7 @@ function refreshCatalogStatus() {
     setSourceStatus(catalogStatusLabel(name, adultShows));
   } else {
     const regularShows = state.shows.filter((s) => !AdultMode.isAdultContent(s));
-    setSourceStatus(catalogStatusLabel(state.regularSourceLabel || "ZenkaiTV catalog", regularShows));
+    setSourceStatus(catalogStatusLabel(state.regularSourceLabel || "zxkai catalog", regularShows));
   }
 }
 
@@ -4512,7 +4512,7 @@ function renderCarousel() {
         carouselBackdropImage.removeAttribute("srcset");
         carouselBackdropImage.classList.remove("has-banner");
       }
-      carouselTitle.textContent = "Loading ZenkaiTV...";
+      carouselTitle.textContent = "Loading zxkai...";
       carouselText.textContent = "Getting the catalog ready.";
       carouselMeta.textContent = "Please wait";
     }
@@ -4875,8 +4875,8 @@ function scheduleCarouselIndicatorHydration(items = []) {
 function simpleCarouselText(show) {
   const episodeNumber = Number(show?._av1Episode || show?.latestAiredEp || show?.episode || 0);
   const clean = show.description || (episodeNumber > 0
-    ? `Episode ${episodeNumber} is now available on ZenkaiTV.`
-    : "A recent anime release, now available on ZenkaiTV.");
+    ? `Episode ${episodeNumber} is now available on zxkai.`
+    : "A recent anime release, now available on zxkai.");
   // Word-safe truncation (no mid-word cuts like "...No").
   return cleanDescription(clean, 150);
 }
@@ -5033,7 +5033,7 @@ function artworkTitleForImage(img) {
   const visibleTitle = card?.querySelector(".show-title, .ep-row-title, .schedule-title")?.textContent;
   if (visibleTitle) return String(visibleTitle).replace(/^\s*\d+\.\s*/, "").trim();
   const label = card?.getAttribute("aria-label") || "";
-  return String(label.replace(/^Open\s+/i, "") || "ZenkaiTV").trim();
+  return String(label.replace(/^Open\s+/i, "") || "zxkai").trim();
 }
 
 function applyArtworkPlaceholder(img) {
@@ -6168,15 +6168,15 @@ function ensureNotFoundSection() {
       <span></span>
       <h2>Page Not Found</h2>
     </div>
-    <p class="empty-state">This ZenkaiTV page does not exist yet.</p>
+    <p class="empty-state">This zxkai page does not exist yet.</p>
   `;
   document.querySelector("main")?.appendChild(section);
   return section;
 }
 
 function updateRouteMeta(routeInfo = {}, show = null, target = {}) {
-  let title = routeInfo.title || "ZenkaiTV - Watch Anime Online";
-  let description = routeInfo.description || "Watch anime online in HD on ZenkaiTV.";
+  let title = routeInfo.title || "zxkai - Watch Anime Online";
+  let description = routeInfo.description || "Watch anime online in HD on zxkai.";
   const isAdultMode = typeof AdultMode !== "undefined" && AdultMode.isEnabled();
 
   if (isAdultMode && !show) {
@@ -6191,7 +6191,7 @@ function updateRouteMeta(routeInfo = {}, show = null, target = {}) {
     description = description
       .replace("Watch anime online", "Watch adult anime online")
       .replace("Search anime", "Search adult anime")
-      .replace("Browse the full ZenkaiTV anime library", "Browse the full ZenkaiTV 18+ adult catalog");
+      .replace("Browse the full zxkai anime library", "Browse the full zxkai 18+ adult catalog");
   }
 
   if (show) {
@@ -6200,11 +6200,11 @@ function updateRouteMeta(routeInfo = {}, show = null, target = {}) {
       episode: target.episodeNumber ?? state.activeEpisode?.episode?.episode
     });
     if (routeInfo.name === "watch" && ep !== null) {
-      title = `${showTitle} Episode ${ep} - ZenkaiTV`;
-      description = `Watch ${showTitle} episode ${ep} on ZenkaiTV.`;
+      title = `${showTitle} Episode ${ep} - zxkai`;
+      description = `Watch ${showTitle} episode ${ep} on zxkai.`;
     } else {
-      title = `Watch ${showTitle} - ZenkaiTV`;
-      description = (show.description || `Watch ${showTitle} on ZenkaiTV.`).replace(/<[^>]+>/g, "").slice(0, 155);
+      title = `Watch ${showTitle} - zxkai`;
+      description = (show.description || `Watch ${showTitle} on zxkai.`).replace(/<[^>]+>/g, "").slice(0, 155);
     }
   }
   document.title = title;
@@ -6512,7 +6512,7 @@ function renderSkeletonCards(container, count = 7) {
 let _scheduleSelectedDay = null;
 let _scheduleControlsWired = false;
 
-// The weekly grid describes ZenkaiTV's recurring release day. A temporary
+// The weekly grid describes zxkai's recurring release day. A temporary
 // AniList delay can move one nextAiringAt without changing that weekly slot.
 // Keep corrections identity-scoped so similarly named seasons are untouched.
 const WEEKLY_SCHEDULE_DAY_OVERRIDES = Object.freeze({
@@ -8279,13 +8279,13 @@ function buildSourceCardsHtml() {
         <strong>Add Server or Online Addon</strong>
         <span>Local or HTTPS</span>
       </div>
-      <p>Paste a local server URL or online HTTPS addon that returns anime JSON. ZenkaiTV will merge it with AniList/Jikan and unlock episodes when items include videoUrl, streamUrl, or file.</p>
+      <p>Paste a local server URL or online HTTPS addon that returns anime JSON. zxkai will merge it with AniList/Jikan and unlock episodes when items include videoUrl, streamUrl, or file.</p>
       <button class="primary-action focusable" data-source-add>Add Source</button>
     </article>
     ${metadataOnline ? `
     <article class="source-card source-card-feature">
       <div>
-        <strong>ZenkaiTV Metadata API</strong>
+        <strong>zxkai Metadata API</strong>
         <span>${escapeHtml(state.apiStatus.metadata)}</span>
       </div>
       <p>Local server endpoint that merges AniList and Jikan before the TV app renders. If it is unavailable, the app falls back to direct public API calls.</p>
@@ -8354,17 +8354,17 @@ function renderTermsHtml() {
     <h4>Terms of Service</h4>
     <p>Last updated: May 2026</p>
     <h4>1. Acceptance of Terms</h4>
-    <p>By using ZenkaiTV you agree to these Terms of Service. If you do not agree, please stop using the application immediately.</p>
+    <p>By using zxkai you agree to these Terms of Service. If you do not agree, please stop using the application immediately.</p>
     <h4>2. Purpose of the Application</h4>
-    <p>ZenkaiTV is a personal media organizer and catalog browser. It aggregates publicly available metadata from third-party APIs (AniList, Jikan, and configured external addons) to help you discover, track, and play anime content.</p>
+    <p>zxkai is a personal media organizer and catalog browser. It aggregates publicly available metadata from third-party APIs (AniList, Jikan, and configured external addons) to help you discover, track, and play anime content.</p>
     <h4>3. Content & Copyright</h4>
-    <p>ZenkaiTV does not host, store, or distribute any copyrighted video content. All video streams are provided by third-party sources that you configure. You are solely responsible for ensuring that your use of any linked content complies with applicable copyright laws in your jurisdiction.</p>
+    <p>zxkai does not host, store, or distribute any copyrighted video content. All video streams are provided by third-party sources that you configure. You are solely responsible for ensuring that your use of any linked content complies with applicable copyright laws in your jurisdiction.</p>
     <h4>4. Third-Party Sources</h4>
-    <p>You may connect external addons and catalog endpoints. ZenkaiTV is not responsible for the content, availability, or legality of any third-party source. By adding a source you confirm that you have the right to access it.</p>
+    <p>You may connect external addons and catalog endpoints. zxkai is not responsible for the content, availability, or legality of any third-party source. By adding a source you confirm that you have the right to access it.</p>
     <h4>5. No Warranty</h4>
-    <p>ZenkaiTV is provided "as is" without warranties of any kind. We do not guarantee uninterrupted access, accuracy of metadata, or availability of any streaming endpoint. Catalog data depends entirely on third-party APIs that may change or become unavailable.</p>
+    <p>zxkai is provided "as is" without warranties of any kind. We do not guarantee uninterrupted access, accuracy of metadata, or availability of any streaming endpoint. Catalog data depends entirely on third-party APIs that may change or become unavailable.</p>
     <h4>6. Limitation of Liability</h4>
-    <p>To the fullest extent permitted by law, the developers of ZenkaiTV are not liable for any indirect, incidental, or consequential damages arising from your use of this application.</p>
+    <p>To the fullest extent permitted by law, the developers of zxkai are not liable for any indirect, incidental, or consequential damages arising from your use of this application.</p>
     <h4>7. Changes to Terms</h4>
     <p>These terms may be updated at any time. Continued use of the application after changes are posted constitutes acceptance of the revised terms.</p>
     <h4>8. Governing Law</h4>
@@ -8377,7 +8377,7 @@ function renderPrivacyHtml() {
     <h4>Privacy Policy</h4>
     <p>Last updated: May 2026</p>
     <h4>1. Data We Collect</h4>
-    <p>ZenkaiTV stores all user data locally on your device using <code>localStorage</code>. This includes:</p>
+    <p>zxkai stores all user data locally on your device using <code>localStorage</code>. This includes:</p>
     <ul>
       <li>Your favorite shows and watch history</li>
       <li>UI preferences (language, theme, volume, motion)</li>
@@ -8385,15 +8385,15 @@ function renderPrivacyHtml() {
       <li>Cached API responses (metadata, episode lists)</li>
     </ul>
     <h4>2. Data We Do NOT Collect</h4>
-    <p>We do not collect, transmit, or store any of your personal data on external servers. ZenkaiTV has no analytics, no telemetry, no accounts, and no login system.</p>
+    <p>We do not collect, transmit, or store any of your personal data on external servers. zxkai has no analytics, no telemetry, no accounts, and no login system.</p>
     <h4>3. Third-Party API Requests</h4>
-    <p>When you use ZenkaiTV, the app makes requests to third-party APIs (AniList, Jikan, and any sources you configure). These services have their own privacy policies. Your IP address may be visible to those services as part of normal internet traffic.</p>
+    <p>When you use zxkai, the app makes requests to third-party APIs (AniList, Jikan, and any sources you configure). These services have their own privacy policies. Your IP address may be visible to those services as part of normal internet traffic.</p>
     <h4>4. Local Storage</h4>
     <p>All cached metadata and preferences are stored in your browser's <code>localStorage</code>. You can clear this data at any time from Settings → Player → Clear Cache, or through your browser's developer tools. Cache entries expire automatically based on their configured TTL.</p>
     <h4>5. API Keys</h4>
-    <p>Any API keys you enter (e.g., for Anime1v) are stored locally in your browser only. They are never transmitted to the ZenkaiTV developers or any third party other than the specific service the key belongs to.</p>
+    <p>Any API keys you enter (e.g., for Anime1v) are stored locally in your browser only. They are never transmitted to the zxkai developers or any third party other than the specific service the key belongs to.</p>
     <h4>6. Children's Privacy</h4>
-    <p>ZenkaiTV is not directed at children under 13. We do not knowingly collect information from children. If you believe a child is using the application inappropriately, please refer to your device's parental controls.</p>
+    <p>zxkai is not directed at children under 13. We do not knowingly collect information from children. If you believe a child is using the application inappropriately, please refer to your device's parental controls.</p>
     <h4>7. Changes to This Policy</h4>
     <p>We may update this Privacy Policy from time to time. The "last updated" date at the top reflects when changes were last made. Continued use of the application constitutes acceptance.</p>
     <h4>8. Contact</h4>
@@ -8431,7 +8431,7 @@ function renderSettings() {
       <button class="${tc("legal")}" data-settings-nav="legal" type="button">
         <span class="rail-icon" aria-hidden="true">⚖</span> Legal
       </button>
-      <span class="settings-version">ZenkaiTV 2.0 · Web / Android TV</span>
+      <span class="settings-version">zxkai 2.0 · Web / Android TV</span>
     </aside>
 
     <div class="settings-console">
@@ -10689,7 +10689,7 @@ function applyWatchBackdrop(show, season) {
       blur.style.backgroundImage = blurUrl ? `url("${blurUrl}")` : "";
       blur.classList.toggle("is-visible", Boolean(blurUrl));
     }
-    if (titleArtText) titleArtText.textContent = getShowTitle(show) || show.title || "ZenkaiTV";
+    if (titleArtText) titleArtText.textContent = getShowTitle(show) || show.title || "zxkai";
     if (titleArt) titleArt.hidden = Boolean(url);
     // Always cinematic; .has-art only switches image-backdrop vs gradient fallback.
     overlay?.classList.add("cinematic");
@@ -14068,7 +14068,7 @@ function buildApkPlayerUrl(url = "", useNativeControls = false, episode = null) 
     state.activeEpisode?.season || {},
     state.activeShow || {}
   );
-  const playerTitle = currentEpisodeTitle() || state.activeShow?.title || state.activeShow?.romajiTitle || episode?.showTitle || "ZenkaiTV";
+  const playerTitle = currentEpisodeTitle() || state.activeShow?.title || state.activeShow?.romajiTitle || episode?.showTitle || "zxkai";
   const hash = streamTypeFromUrl(url) === "dash"
     ? "#dash"
     : streamTypeFromUrl(url) === "file"
@@ -18006,7 +18006,7 @@ function renderDirectVideoPlayer(frame, url, episode) {
     <div class="video-player-shell vidstream-player fit-${escapeHtml(fit)} ${useApkPlayer ? "is-artplayer-frame" : useNativeControls ? "is-iframe" : ""}" data-stream-type="${escapeHtml(streamType || "direct")}">
       <div class="vid-player-stage">
         ${useApkPlayer
-          ? `<iframe id="animePlayerFrame" class="apk-video-frame" src="${escapeHtml(buildApkPlayerUrl(url, true, episode))}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer" title="ZenkaiTV video player"></iframe>`
+          ? `<iframe id="animePlayerFrame" class="apk-video-frame" src="${escapeHtml(buildApkPlayerUrl(url, true, episode))}" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer" title="zxkai video player"></iframe>`
           : `<video id="animePlayer" ${useNativeControls ? "controls" : ""} autoplay playsinline x-webkit-airplay="allow" crossorigin="anonymous">
               ${spanishTrack ? `<track kind="subtitles" srclang="es" label="Español" src="${escapeHtml(spanishTrack.url)}" default>` : ""}
             </video>`}
@@ -18788,7 +18788,7 @@ function isAndroidTV() {
 }
 
 function openExternalPlaybackUrl(externalUrl, errorPanel) {
-  console.info("Embedding external playback inside ZenkaiTV instead of opening a new window.", externalUrl);
+  console.info("Embedding external playback inside zxkai instead of opening a new window.", externalUrl);
   renderEmbeddedAniPubPlayer(state.activeShow || { title: "AniPub" }, externalUrl);
 }
 
@@ -19432,7 +19432,7 @@ async function copyTextToClipboard(text) {
 shareButton?.addEventListener("click", async () => {
   const show = state.activeShow;
   if (!show) return;
-  const title = getShowTitle(show) || show.title || "ZenkaiTV";
+  const title = getShowTitle(show) || show.title || "zxkai";
   const url = buildAnimeShareUrl(show);
   // Always copy the link so the user can paste it to a friend. On devices with a
   // native share sheet, offer that too (cancelling it still leaves the copy).
@@ -19444,7 +19444,7 @@ shareButton?.addEventListener("click", async () => {
     // is jarring — the clipboard copy above is already sufficient on desktop.
     const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1;
     if (navigator.share && isMobileDevice) {
-      await navigator.share({ title, text: `Watch ${title} on ZenkaiTV`, url });
+      await navigator.share({ title, text: `Watch ${title} on zxkai`, url });
     } else if (!copied) {
       showToast("Couldn't copy the link");
     }
@@ -20521,7 +20521,7 @@ window.setTimeout(hideAppLoader, APP_LOADER_MAX_MS);
 window.setTimeout(() => { try { checkSourceRefreshes(); } catch { /* ignore */ } }, 30000);
 
 window.runZenkaiDebugReport = window.runDevelopmentDebugReport = function() {
-  console.log("=== ZenkaiTV / AnimeTV Diagnostics Report ===");
+  console.log("=== zxkai / AnimeTV Diagnostics Report ===");
   if (!state.shows || state.shows.length === 0) {
     console.warn("No shows loaded in state.shows.");
     return;

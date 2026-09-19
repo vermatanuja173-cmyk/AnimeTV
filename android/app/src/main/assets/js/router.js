@@ -4,16 +4,16 @@
   const MAIN_ROUTES = new Map([
     ["/", { name: "home", appRoute: "home", title: "zxkai - Watch Anime Online", description: "Watch anime online in HD on zxkai." }],
     ["/search", { name: "search", appRoute: "library", title: "Search Anime - zxkai", description: "Search anime, seasons, and episodes on zxkai." }],
-    ["/browse", { name: "browse", appRoute: "library", title: "Anime Library - ZenkaiTV", description: "Browse the full ZenkaiTV anime library." }],
-    ["/latest", { name: "latest", appRoute: "home", focus: "latest", title: "Latest Episodes - ZenkaiTV", description: "Watch the latest anime episodes on ZenkaiTV." }],
-    ["/schedule", { name: "schedule", appRoute: "schedule", title: "Weekly Schedule - ZenkaiTV", description: "See the weekly anime release schedule on ZenkaiTV." }],
-    ["/releases", { name: "releases", appRoute: "releases", title: "Releases - ZenkaiTV", description: "Browse the release calendar on ZenkaiTV." }],
-    ["/continue-watching", { name: "continue-watching", appRoute: "home", focus: "continueWatching", title: "Continue Watching - ZenkaiTV", description: "Resume your anime on ZenkaiTV." }],
-    ["/favorites", { name: "favorites", appRoute: "favorites", title: "Favorites - ZenkaiTV", description: "Your ZenkaiTV favorites and watchlist." }],
-    ["/settings", { name: "settings", appRoute: "settings", title: "Settings - ZenkaiTV", description: "Adjust ZenkaiTV playback and app settings." }],
-    ["/sources", { name: "sources", appRoute: "sources", title: "Sources and Addons - ZenkaiTV", description: "Manage ZenkaiTV sources and addons." }],
-    ["/login", { name: "login", appRoute: "profile", title: "Login - ZenkaiTV", description: "Login to your ZenkaiTV profile." }],
-    ["/profile", { name: "profile", appRoute: "profile", title: "User Profile - ZenkaiTV", description: "Manage your ZenkaiTV profile." }]
+    ["/browse", { name: "browse", appRoute: "library", title: "Anime Library - zxkai", description: "Browse the full zxkai anime library." }],
+    ["/latest", { name: "latest", appRoute: "home", focus: "latest", title: "Latest Episodes - zxkai", description: "Watch the latest anime episodes on zxkai." }],
+    ["/schedule", { name: "schedule", appRoute: "schedule", title: "Weekly Schedule - zxkai", description: "See the weekly anime release schedule on zxkai." }],
+    ["/releases", { name: "releases", appRoute: "releases", title: "Releases - zxkai", description: "Browse the release calendar on zxkai." }],
+    ["/continue-watching", { name: "continue-watching", appRoute: "home", focus: "continueWatching", title: "Continue Watching - zxkai", description: "Resume your anime on zxkai." }],
+    ["/favorites", { name: "favorites", appRoute: "favorites", title: "Favorites - zxkai", description: "Your zxkai favorites and watchlist." }],
+    ["/settings", { name: "settings", appRoute: "settings", title: "Settings - zxkai", description: "Adjust zxkai playback and app settings." }],
+    ["/sources", { name: "sources", appRoute: "sources", title: "Sources and Addons - zxkai", description: "Manage zxkai sources and addons." }],
+    ["/login", { name: "login", appRoute: "profile", title: "Login - zxkai", description: "Login to your zxkai profile." }],
+    ["/profile", { name: "profile", appRoute: "profile", title: "User Profile - zxkai", description: "Manage your zxkai profile." }]
   ]);
 
   const HASH_MIGRATIONS = new Map([
@@ -85,8 +85,8 @@
       name: "anime",
       appRoute: "home",
       path: clean,
-      title: "Watch Anime - ZenkaiTV",
-      description: "Anime details and episodes on ZenkaiTV.",
+      title: "Watch Anime - zxkai",
+      description: "Anime details and episodes on zxkai.",
       params: { animeId: safeDecode(m[1]) }
     };
 
@@ -95,8 +95,8 @@
       name: "anime-seasons",
       appRoute: "home",
       path: clean,
-      title: "Anime Seasons - ZenkaiTV",
-      description: "Browse anime seasons on ZenkaiTV.",
+      title: "Anime Seasons - zxkai",
+      description: "Browse anime seasons on zxkai.",
       params: { animeId: safeDecode(m[1]) },
       target: { tab: "seasons" }
     };
@@ -109,8 +109,8 @@
         name: "anime-season",
         appRoute: "home",
         path: clean,
-        title: "Anime Season - ZenkaiTV",
-        description: "Browse this anime season on ZenkaiTV.",
+        title: "Anime Season - zxkai",
+        description: "Browse this anime season on zxkai.",
         params: { animeId: safeDecode(m[1]), seasonNumber: seasonRaw },
         target: {
           tab: "episodes",
@@ -132,8 +132,8 @@
         name: "anime-episode",
         appRoute: "home",
         path: clean,
-        title: "Anime Episode - ZenkaiTV",
-        description: "Anime episode details on ZenkaiTV.",
+        title: "Anime Episode - zxkai",
+        description: "Anime episode details on zxkai.",
         params: { animeId: safeDecode(m[1]), episodeNumber: safeDecode(m[2]) },
         target: { ...parsed, tab: "episodes" }
       };
@@ -151,29 +151,29 @@
         name: "watch",
         appRoute: "home",
         path: clean,
-        title: "Watch Episode - ZenkaiTV",
-        description: "Watch this anime episode on ZenkaiTV.",
+        title: "Watch Episode - zxkai",
+        description: "Watch this anime episode on zxkai.",
         params: { animeId: safeDecode(m[1]), episode: safeDecode(m[2]) },
         target: { ...parsed, tab: "episodes", playIntent: true, watchRoute: true }
       };
     }
 
     m = clean.match(/^\/genre\/([^/]+)$/);
-    if (m) return { name: "genre", appRoute: "library", path: clean, params: { genreName: safeDecode(m[1]) }, title: `${safeDecode(m[1])} Anime - ZenkaiTV`, description: `Browse ${safeDecode(m[1])} anime on ZenkaiTV.` };
+    if (m) return { name: "genre", appRoute: "library", path: clean, params: { genreName: safeDecode(m[1]) }, title: `${safeDecode(m[1])} Anime - zxkai`, description: `Browse ${safeDecode(m[1])} anime on zxkai.` };
     m = clean.match(/^\/year\/(\d{4})$/);
-    if (m) return { name: "year", appRoute: "library", path: clean, params: { year: m[1] }, title: `${m[1]} Anime - ZenkaiTV`, description: `Browse ${m[1]} anime on ZenkaiTV.` };
+    if (m) return { name: "year", appRoute: "library", path: clean, params: { year: m[1] }, title: `${m[1]} Anime - zxkai`, description: `Browse ${m[1]} anime on zxkai.` };
     m = clean.match(/^\/season\/(\d{4})\/([^/]+)$/);
-    if (m) return { name: "seasonal", appRoute: "library", path: clean, params: { year: m[1], seasonName: safeDecode(m[2]) }, title: `${m[2]} ${m[1]} Anime - ZenkaiTV`, description: `Browse ${m[2]} ${m[1]} anime on ZenkaiTV.` };
+    if (m) return { name: "seasonal", appRoute: "library", path: clean, params: { year: m[1], seasonName: safeDecode(m[2]) }, title: `${m[2]} ${m[1]} Anime - zxkai`, description: `Browse ${m[2]} ${m[1]} anime on zxkai.` };
     m = clean.match(/^\/studio\/([^/]+)$/);
-    if (m) return { name: "studio", appRoute: "library", path: clean, params: { studioName: safeDecode(m[1]) }, title: `${safeDecode(m[1])} Anime - ZenkaiTV`, description: `Browse anime by ${safeDecode(m[1])} on ZenkaiTV.` };
+    if (m) return { name: "studio", appRoute: "library", path: clean, params: { studioName: safeDecode(m[1]) }, title: `${safeDecode(m[1])} Anime - zxkai`, description: `Browse anime by ${safeDecode(m[1])} on zxkai.` };
 
     return {
       name: "not-found",
       appRoute: "not-found",
       path: clean,
       params: {},
-      title: "Page Not Found - ZenkaiTV",
-      description: "This ZenkaiTV page could not be found."
+      title: "Page Not Found - zxkai",
+      description: "This zxkai page could not be found."
     };
   }
 

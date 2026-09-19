@@ -1160,7 +1160,7 @@ body.ztv-chrome-hidden .ztv-corner-toggle svg {
 }
 
 /* ── Top-bar mascot ───────────────────────────────────────────────────────
-   Fills the dead space between the episode title and the ZenkaiTV wordmark with
+  Fills the dead space between the episode title and the zxkai banner with
    a single animated GIF - the GIF supplies the motion, so there is no JS frame
    loop and no CSS keyframes to keep in sync with it.
    Decorative only: no pointer events, and it sits in its own flex cell so it can

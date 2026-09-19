@@ -1,5 +1,5 @@
 /**
- * ZenkaiTV Adult Mode
+ * zxkai Adult Mode
  *
  * A single source of truth for the optional 18+ catalog mode. It owns:
  *   - the on/off state (+ "has the user confirmed 18+ once") with localStorage

@@ -238,7 +238,7 @@ button {
   pointer-events: none;
 }
 
-/* ── ZenkaiTV app loader ──────────────────────────────────────────────────── */
+/* ── zxkai app loader ─────────────────────────────────────────────────────── */
 .loader-mark {
   position: relative;
   display: grid;
@@ -8180,7 +8180,7 @@ body.reduce-motion .library-auto-loader-track > span {
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
-   Modern micro-interactions & reveals (ZenkaiTV)
+  Modern micro-interactions & reveals (zxkai)
    A cohesive motion layer — all covered by body.reduce-motion (instant) and
    built on transform/opacity for smooth, GPU-friendly animation.
    ════════════════════════════════════════════════════════════════════════════ */
@@ -10485,7 +10485,7 @@ body.adult-mode .app-shell {
 .adult-mode-badge::before { display: none; }
 .adult-mode-badge[hidden] { display: none; }
 
-/* Make the ZenkaiTV logo read red in 18+ mode: recolor the PNG glyph via filter
+/* Make the zxkai logo read red in 18+ mode: recolor the PNG glyph via filter
    AND retint the circular mark's glow/halo (which use hard-coded blues). */
 body.adult-mode .brand-logo,
 body.adult-mode .loader-logo {
@@ -12129,7 +12129,7 @@ body.is-tv .topbar-auth {
   }
 }
 
-/* Mini footer for mobile web — just the ZenkaiTV wordmark, compact and flush with
+/* Mini footer for mobile web — just the zxkai wordmark, compact and flush with
    the bottom nav. The full tagline + credits footer read as a big empty gap on a
    phone. Appended last so it wins over the earlier mobile footer rules. */
 @media (max-width: 760px) {

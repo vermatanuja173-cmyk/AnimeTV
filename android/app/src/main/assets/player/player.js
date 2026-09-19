@@ -105,7 +105,7 @@
   }
 
   waitForLibraries().then(initPlayer).catch((error) => {
-    console.error("[ZenkaiPlayer] Libraries failed to load", error);
+    console.error("[zxkaiPlayer] Libraries failed to load", error);
     showError("Player failed to load", "ArtPlayer or hls.js could not be loaded. Check your connection and retry.");
     send("error", "library-load-failed");
   });
@@ -2305,7 +2305,7 @@
       send("volume", getStatus());
     });
     art.on("error", (error) => {
-      console.error("[ZenkaiPlayer] ArtPlayer error", error);
+      console.error("[zxkaiPlayer] ArtPlayer error", error);
       clearStartupWatchdog();
       showError("Video failed to load", "This stream could not be played. Try another source or retry this episode.");
       send("error", "playback-error");
@@ -2426,7 +2426,7 @@
     });
     hls.on(window.Hls.Events.ERROR, (_, data) => {
       if (!data?.fatal) return;
-      console.error("[ZenkaiPlayer] HLS fatal error", JSON.stringify({
+      console.error("[zxkaiPlayer] HLS fatal error", JSON.stringify({
         type: data.type,
         details: data.details,
         reason: data.reason,
@@ -2485,7 +2485,7 @@
         if (playAttempt && typeof playAttempt.catch === "function") playAttempt.catch(() => {});
         send("recover", { reason, count: attempt, ...getStatus() });
       } catch (error) {
-        console.warn("[ZenkaiPlayer] HLS reload failed", error);
+        console.warn("[zxkaiPlayer] HLS reload failed", error);
       }
     }, Math.min(250 * Math.max(1, attempt), 1000));
   }
@@ -2695,7 +2695,7 @@
       showSeekToast(delta);
       send("seek", getStatus());
     } catch (error) {
-      console.warn("[ZenkaiPlayer] Seek failed", error);
+      console.warn("[zxkaiPlayer] Seek failed", error);
     }
   }
 
@@ -3021,11 +3021,11 @@
       const request = new window.chrome.cast.media.SeekRequest();
       request.currentTime = Math.max(0, Number(seconds) || 0);
       media.seek(request, () => {}, (error) => {
-        console.warn("[ZenkaiPlayer] Cast seek failed", error);
+        console.warn("[zxkaiPlayer] Cast seek failed", error);
       });
       return true;
     } catch (error) {
-      console.warn("[ZenkaiPlayer] Cast seek threw", error);
+      console.warn("[zxkaiPlayer] Cast seek threw", error);
       return false;
     }
   }

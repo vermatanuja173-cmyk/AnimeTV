@@ -1,5 +1,5 @@
 /**
- * ZenkaiTV Season Normalization System
+ * zxkai Season Normalization System
  * 
  * Handles grouping anime entries into a logical hierarchy of Seasons, Parts, 
  * and Extras (Movies, OVAs, etc.) based on metadata and title parsing.
