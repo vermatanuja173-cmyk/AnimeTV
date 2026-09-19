@@ -10635,7 +10635,9 @@ function prepareUnderHentaiSnapshotItem(item = {}) {
       const epNum = Number(episode.number || episode.episode);
 
       const underHentaiOptions = (Array.isArray(episode.sourceOptions) ? episode.sourceOptions : [])
-        .filter(hasUnderHentaiDirectEmbed)
+        .filter((sourceOption) => hasUnderHentaiDirectEmbed(sourceOption)
+          || sourceOption?.watchUrl
+          || sourceOption?.streamResolver?.endpoint)
         .map((sourceOption, releaseIndex) => ({
           id: `underhentai-e${epNum}-r${episodeIndex + 1}-v${releaseIndex + 1}`,
           label: sourceOption.label || `Stream ${releaseIndex + 1}`,
